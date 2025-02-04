@@ -39,6 +39,7 @@ export default defineConfig({
 				'util',
 				'dns',
 				'ws',
+				'readline',
 			],
 			input: 'packages/playground/cli/src/cli.ts',
 			output: {
