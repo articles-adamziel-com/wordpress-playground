@@ -3,35 +3,31 @@ name: Deploy private Playground web app
 on:
     workflow_dispatch:
     # Deploy the website every day at 9am and 6pm UTC
-    # TODO: Uncomment when ready for regular deployment
-    # schedule:
-    #     - cron: '0 9,18 * * *'
+    schedule:
+        - cron: '0 9,18 * * *'
 
 concurrency:
     group: website-deployment
-    # TODO: Enable cancel-in-progress once we are deploying per commit?
-    #cancel-in-progress: true
 
 jobs:
     build_and_deploy:
         # Only run this workflow from the trunk branch and when it's triggered by another workflow OR a Playground maintainer
-        # TODO: Uncomment guards before merge
-        # if: >
-        #     github.ref == 'refs/heads/trunk' && (
-        #         github.event_name == 'workflow_run' ||
-        #         github.event_name == 'workflow_dispatch' ||
-        #         github.actor == 'adamziel' ||
-        #         github.actor == 'dmsnell' ||
-        #         github.actor == 'bgrgicak' ||
-        #         github.actor == 'brandonpayton' ||
-        #         github.actor == 'zaerl' ||
-        #         github.actor == 'janjakes'
-        #     )
+        if: >
+            github.ref == 'refs/heads/trunk' && (
+                github.event_name == 'workflow_run' ||
+                github.event_name == 'workflow_dispatch' ||
+                github.actor == 'adamziel' ||
+                github.actor == 'dmsnell' ||
+                github.actor == 'bgrgicak' ||
+                github.actor == 'brandonpayton' ||
+                github.actor == 'zaerl' ||
+                github.actor == 'janjakes'
+            )
 
         # Specify runner + deployment step
         runs-on: ubuntu-latest
         environment:
-            name: playground-wordpress-net-wp-cloud
+            name: internal-web-app-deployment
         steps:
             - uses: actions/checkout@v4
               with:
