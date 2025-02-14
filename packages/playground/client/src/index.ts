@@ -110,7 +110,7 @@ export async function startPlaygroundWeb({
 	corsProxy,
 	shouldInstallWordPress,
 }: StartPlaygroundOptions): Promise<PlaygroundClient> {
-	assertValidRemote(remoteUrl);
+	assertLikelyCompatibleRemoteOrigin(remoteUrl);
 	allowStorageAccessByUserActivation(iframe);
 
 	remoteUrl = setQueryParams(remoteUrl, {
@@ -192,15 +192,40 @@ function allowStorageAccessByUserActivation(iframe: HTMLIFrameElement) {
 }
 
 const officialRemoteOrigin = 'https://playground.wordpress.net';
-function assertValidRemote(remoteHtmlUrl: string) {
+const validRemoteOrigins = [
+	officialRemoteOrigin,
+	// Allow hosting remote from same origin
+	location.origin,
+	'http://localhost',
+	'https://localhost',
+	'http://127.0.0.1',
+	'https://127.0.0.1',
+];
+/**
+ * Assert that the remote origin is likely compatible with this client library.
+ *
+ * Prior to this assertion, there were cases where folks used the client library
+ * from playground.wordpress.net with other origins and eventually ran into
+ * compatibility issues when the two sides went out of sync. This way,
+ * we discourage that practice which is likely to lead to breakage for the
+ * embedding app.
+ *
+ * @param remoteHtmlUrl The URL for remote.html
+ */
+function assertLikelyCompatibleRemoteOrigin(remoteHtmlUrl: string) {
 	const url = new URL(remoteHtmlUrl, officialRemoteOrigin);
-	if (
-		(url.origin === officialRemoteOrigin || url.hostname === 'localhost') &&
-		url.pathname !== '/remote.html'
-	) {
+
+	const validRemote =
+		validRemoteOrigins.includes(url.origin) &&
+		url.pathname === '/remote.html';
+
+	if (!validRemote) {
 		throw new Error(
 			`Invalid remote URL: ${url}. ` +
-				`Expected origin to be ${officialRemoteOrigin}/remote.html.`
+				'Expected remote URL to have a path of "/remote.html" based ' +
+				`on one of the following origins:\n ${validRemoteOrigins.join(
+					'\n'
+				)}`
 		);
 	}
 }
