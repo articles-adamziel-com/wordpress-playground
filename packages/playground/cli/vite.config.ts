@@ -1,12 +1,26 @@
 /// <reference types="vitest" />
+import { join } from 'path';
 import { defineConfig } from 'vite';
-import { nxViteTsPaths } from '@nx/vite/plugins/nx-tsconfig-paths.plugin';
+import dts from 'vite-plugin-dts';
+
+// eslint-disable-next-line @nx/enforce-module-boundaries
+import { viteTsConfigPaths } from '../../vite-extensions/vite-ts-config-paths';
 
 export default defineConfig({
 	assetsInclude: ['**/*.ini'],
 	cacheDir: '../../../node_modules/.vite/php-cli',
 
-	plugins: [nxViteTsPaths()],
+	plugins: [
+		dts({
+			entryRoot: 'src',
+			tsconfigPath: join(__dirname, 'tsconfig.lib.json'),
+			pathsToAliases: false,
+		}),
+
+		viteTsConfigPaths({
+			root: '../../../',
+		}),
+	],
 
 	// Configuration for building your library.
 	// See: https://vitejs.dev/guide/build.html#library-mode
@@ -41,11 +55,14 @@ export default defineConfig({
 				'ws',
 				'readline',
 			],
-			input: 'packages/playground/cli/src/cli.ts',
-			output: {
-				format: 'es',
-				entryFileNames: '[name].js',
+		},
+		lib: {
+			entry: {
+				index: 'src/index.ts',
+				cli: 'src/cli.ts',
 			},
+			name: 'playground-cli',
+			formats: ['es', 'cjs'],
 		},
 	},
 

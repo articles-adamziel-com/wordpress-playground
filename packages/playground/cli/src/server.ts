@@ -1,15 +1,18 @@
-import express, { Request } from 'express';
 import { PHPRequest, PHPResponse } from '@php-wasm/universal';
+import express, { Request } from 'express';
 import { IncomingMessage, Server, ServerResponse } from 'http';
 import { AddressInfo } from 'net';
+import { RunCLIServer } from './run-cli';
 
 export interface ServerOptions {
 	port: number;
-	onBind: (port: number) => Promise<any>;
+	onBind: (server: Server, port: number) => Promise<RunCLIServer>;
 	handleRequest: (request: PHPRequest) => Promise<PHPResponse>;
 }
 
-export async function startServer(options: ServerOptions) {
+export async function startServer(
+	options: ServerOptions
+): Promise<RunCLIServer> {
 	const app = express();
 
 	const server = await new Promise<
@@ -42,7 +45,7 @@ export async function startServer(options: ServerOptions) {
 
 	const address = server.address();
 	const port = (address! as AddressInfo).port;
-	await options.onBind(port);
+	return await options.onBind(server, port);
 }
 
 const bufferRequestBody = async (req: Request): Promise<Uint8Array> =>
@@ -52,7 +55,7 @@ const bufferRequestBody = async (req: Request): Promise<Uint8Array> =>
 			body.push(chunk);
 		});
 		req.on('end', () => {
-			resolve(Buffer.concat(body));
+			resolve(new Uint8Array(Buffer.concat(body)));
 		});
 	});
 
