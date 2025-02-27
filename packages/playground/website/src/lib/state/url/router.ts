@@ -41,8 +41,16 @@ export class PlaygroundRoute {
 		if (site.metadata.storage === 'none') {
 			return updateUrl(baseUrl, site.originalUrlParams || {});
 		} else {
+			const baseParams = new URLSearchParams(baseUrl.split('?')[1]);
+			const preserveParamsKeys = ['mode', 'networking', 'login', 'url'];
+			const preserveParams: Record<string, string | null> = {};
+			for (const param of preserveParamsKeys) {
+				if (baseParams.has(param)) {
+					preserveParams[param] = baseParams.get(param);
+				}
+			}
 			return updateUrl(baseUrl, {
-				searchParams: { 'site-slug': site.slug },
+				searchParams: { 'site-slug': site.slug, ...preserveParams },
 				hash: '',
 			});
 		}
