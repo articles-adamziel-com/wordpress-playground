@@ -26,7 +26,7 @@ export function getWordPressModuleDetails(wpVersion: string = "6.7"): { size: nu
 		case 'nightly':
 			/** @ts-ignore */
 			return {
-				size: 24744608,
+				size: 24744616,
 				url: url_nightly,
 			};
 			
