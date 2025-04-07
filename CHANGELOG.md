@@ -5,6 +5,29 @@ that runs on every NPM release. The file follows the [Keep a Changelog](https://
 format.
 
 
+## [v1.0.28] (2025-03-05) 
+
+### Various
+
+- 64bit integer support, drop PHP 7.0 and 7.1 support. ([#74](https://github.com/Automattic/wordpress-playground-private/pull/74))
+- FS Journal: Handle renaming OPFS files via delete + create (instead of file.move()). ([#64](https://github.com/Automattic/wordpress-playground-private/pull/64))
+- GitHub: Cache node_modules per arch to avoid nx error. ([#70](https://github.com/Automattic/wordpress-playground-private/pull/70))
+- Merge from public Playground repo. ([#59](https://github.com/Automattic/wordpress-playground-private/pull/59))
+- OPFS site creation: Use the same "is this directory a site?" check as the site list. ([#65](https://github.com/Automattic/wordpress-playground-private/pull/65))
+- Stop adding source maps to offline assets list. ([#68](https://github.com/Automattic/wordpress-playground-private/pull/68))
+- Support mobile access to private Playground instance. ([#73](https://github.com/Automattic/wordpress-playground-private/pull/73))
+- TLS-&gt;HTTP Proxy: Support outbound request body. ([#61](https://github.com/Automattic/wordpress-playground-private/pull/61))
+- TLS: Only use the server_name extension during server hello. ([#62](https://github.com/Automattic/wordpress-playground-private/pull/62))
+- Website: Blueprints as PWAs with a dynamic manifest.json file. ([#67](https://github.com/Automattic/wordpress-playground-private/pull/67))
+- Website: Preserve the `mode` query arg when opening OPFS site. ([#63](https://github.com/Automattic/wordpress-playground-private/pull/63))
+
+### Contributors
+
+The following contributors merged PRs in this release:
+
+@adamziel @brandonpayton
+
+
 ## [v1.0.30] (2025-04-07) 
 
 ### Bug Fixes
