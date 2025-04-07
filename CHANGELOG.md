@@ -5,6 +5,50 @@ that runs on every NPM release. The file follows the [Keep a Changelog](https://
 format.
 
 
+## [v1.0.27] (2025-02-25) 
+
+### Bug Fixes
+
+- Fix php-wasm build error for WITH_SOURCEMAPS=yes. ([#44](https://github.com/Automattic/wordpress-playground-private/pull/44))
+- Fix php-wasm source map base. ([#46](https://github.com/Automattic/wordpress-playground-private/pull/46))
+- Fix private website deployment workflow. ([#57](https://github.com/Automattic/wordpress-playground-private/pull/57))
+- Fix up private website deployment workflow after initial commit. ([#29](https://github.com/Automattic/wordpress-playground-private/pull/29))
+
+### Various
+
+- Add WITH_DEBUG option for building php-wasm with DWARF debug info. ([#47](https://github.com/Automattic/wordpress-playground-private/pull/47))
+- Add `janjakes` to GitHub workflows actors. ([#33](https://github.com/Automattic/wordpress-playground-private/pull/33))
+- Add a dedicated workflow for deploying private playground. ([#28](https://github.com/Automattic/wordpress-playground-private/pull/28))
+- Add remote data blocks to the allowlist. ([#30](https://github.com/Automattic/wordpress-playground-private/pull/30))
+- Allow ashfame to run self-hosted package release workflow. ([#22](https://github.com/Automattic/wordpress-playground-private/pull/22))
+- Allow deploying custom supported domains for CORS proxy. ([#54](https://github.com/Automattic/wordpress-playground-private/pull/54))
+- CORS proxy: Make allowed origins configurable. ([#43](https://github.com/Automattic/wordpress-playground-private/pull/43))
+- Make further fixes for unreliable end-to-end tests. ([#9](https://github.com/Automattic/wordpress-playground-private/pull/9))
+- Move DNS polyfills to a PHP extension and add missing constants. ([#27](https://github.com/Automattic/wordpress-playground-private/pull/27))
+- New playground CLI function interface. ([#40](https://github.com/Automattic/wordpress-playground-private/pull/40))
+- Replace some hardcoded refs to playground.wordpress.net web app. ([#42](https://github.com/Automattic/wordpress-playground-private/pull/42))
+- Restore safety condition for CORS proxy deployment workflow. ([#55](https://github.com/Automattic/wordpress-playground-private/pull/55))
+- Revert "Add the launch browser flag to CLI". ([#24](https://github.com/Automattic/wordpress-playground-private/pull/24))
+- Revert "Support file URL resources in command line environment". ([#41](https://github.com/Automattic/wordpress-playground-private/pull/41))
+- Schedule private deployment and use private environment. ([#37](https://github.com/Automattic/wordpress-playground-private/pull/37))
+- Stop assuming CLI stdout is a TTY write stream. ([#51](https://github.com/Automattic/wordpress-playground-private/pull/51))
+- Store WordPress site cookies in the browser instead of a custom Cookie Store. ([#20](https://github.com/Automattic/wordpress-playground-private/pull/20))
+- Support file URL resources in command line environment. ([#34](https://github.com/Automattic/wordpress-playground-private/pull/34))
+- Switch to relative paths in app manifest. ([#36](https://github.com/Automattic/wordpress-playground-private/pull/36))
+- Switch to runner with more CPU and RAM. ([#45](https://github.com/Automattic/wordpress-playground-private/pull/45))
+- Treat zip files as zip files regardless of file name. ([#58](https://github.com/Automattic/wordpress-playground-private/pull/58))
+- Try more Playwright workers since we have a runner with more resources. ([#48](https://github.com/Automattic/wordpress-playground-private/pull/48))
+- Update private Playground instance to use dedicated CORS proxy. ([#56](https://github.com/Automattic/wordpress-playground-private/pull/56))
+- Use rsync instead of scp in website deploy workflow. ([#26](https://github.com/Automattic/wordpress-playground-private/pull/26))
+- Use specified SQLite version also for PHP &lt; 7.4. ([#32](https://github.com/Automattic/wordpress-playground-private/pull/32))
+
+### Contributors
+
+The following contributors merged PRs in this release:
+
+@adamziel @bgrgicak @brandonpayton @ingeniumed @JanJakes @zaerl
+
+
 ## [v1.0.28] (2025-03-05) 
 
 ### Various
