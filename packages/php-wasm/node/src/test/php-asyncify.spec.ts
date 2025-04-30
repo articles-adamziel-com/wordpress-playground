@@ -73,155 +73,210 @@ const httpsServer = https.createServer(
 
 		const phpVersions =
 			'PHP' in process.env ? [process.env['PHP']] : SupportedPHPVersions;
-		describe.each(phpVersions)('PHP %s – asyncify', (phpVersion) => {
-			const topOfTheStack: Array<string> = [
-				`file_get_contents(${js['httpUrl']});`,
 
-				`$fp = fopen(${js['httpUrl']}, "r");
+		const topOfTheStack: Record<string, string> = {
+			file_get_contents: `file_get_contents(${js['httpUrl']});`,
+
+			fopen: `
+				$fp = fopen(${js['httpUrl']}, "r");
 				fread($fp, 1024);
 				fclose($fp);`,
-				// `getimgsize(${js['httpUrl']});`,
 
-				// Network functions from https://www.php.net/manual/en/book.network.php
-				`$fp = fsockopen(${js['host']}, ${js['port']});
+			// Network functions from https://www.php.net/manual/en/book.network.php
+			fsockopen: `
+				$fp = fsockopen(${js['host']}, ${js['port']});
 				fwrite($fp, "GET / HTTP/1.1\\r\\n\\r\\n");
 				fread($fp, 10);
 				fclose($fp);`,
-				`gethostbyname(${js['httpUrl']});`,
 
-				// @TODO:
-				// MySQL functions from https://www.php.net/manual/en/book.mysql.php
-				// PDO functions from https://www.php.net/manual/en/book.pdo.php
-				// Sockets functions from https://www.php.net/manual/en/book.sockets.php
-			];
+			gethostbyname: `gethostbyname(${js['httpUrl']});`,
 
+			// @TODO:
+			// PDO functions from https://www.php.net/manual/en/book.pdo.php
+			// Sockets functions from https://www.php.net/manual/en/book.sockets.php
+		};
+
+		// Run MySQL functions if credentials are provided
+		const mysqlCredentials = {
+			host: process.env['MYSQL_HOST'] ?? '127.0.0.1',
+			user: process.env['MYSQL_USER'],
+			password: process.env['MYSQL_PASSWORD'],
+			database: process.env['MYSQL_DATABASE'],
+			port: process.env['MYSQL_PORT'] ?? '3306',
+		};
+		if (
+			mysqlCredentials.host &&
+			mysqlCredentials.user &&
+			mysqlCredentials.password &&
+			mysqlCredentials.database
+		) {
+			topOfTheStack['mysqli'] = `
+				$mysqli = new mysqli(
+					"${mysqlCredentials.host}",
+					"${mysqlCredentials.user}",
+					"${mysqlCredentials.password}",
+					"${mysqlCredentials.database}",
+					${mysqlCredentials.port}
+				);
+				if (mysqli_connect_errno()) {
+					// This should crash the process I hope
+					klfhjkljfkdjfd();
+				}
+				mysqli_ping($mysqli);
+				mysqli_query($mysqli, "SELECT 1");
+				mysqli_multi_query($mysqli, "SELECT 1; SELECT 2;");
+				mysqli_get_server_info($mysqli);
+				mysqli_get_server_version($mysqli);
+				mysqli_get_proto_info($mysqli);
+				mysqli_close($mysqli);`;
+		} else {
+			console.log(`
+				Skipping MySQL network functions because no credentials were provided.
+
+				To run MySQL network function tests, set the following environment variables:
+				- MYSQL_HOST
+				- MYSQL_USER
+				- MYSQL_PASSWORD
+				- MYSQL_DATABASE
+
+				Use 127.0.0.1 instead of localhost to ensure MySQL uses
+				TCP instead of socket, because MySQL in Playground
+				still doesn't support sockets.
+			`);
+		}
+		describe.each(phpVersions)('PHP %s – asyncify', (phpVersion) => {
 			let php: PHP;
 			beforeEach(async () => {
 				php = new PHP(await loadNodeRuntime(phpVersion as any));
 				await setPhpIniEntries(php, { allow_url_fopen: 1 });
 			});
 
-			describe.each(topOfTheStack)('%s', (networkCall) => {
-				test('Direct call', () => assertNoCrash(` ${networkCall}`));
-				describe('Function calls', () => {
-					test('Simple call', () =>
-						assertNoCrash(
-							`function top() { ${networkCall} } top();`
-						));
-					test('Via call_user_func', () =>
-						assertNoCrash(
-							`function top() { ${networkCall} } call_user_func('top'); `
-						));
-					test('Via call_user_func_array', () =>
-						assertNoCrash(
-							`function top() { ${networkCall} } call_user_func_array('top', array());`
-						));
-				});
+			describe.each(Object.keys(topOfTheStack))(
+				'%s',
+				(networkCallKey) => {
+					const networkCall = topOfTheStack[networkCallKey];
+					test('Direct call', () => assertNoCrash(networkCall));
+					describe('Function calls', () => {
+						test('Simple call', () =>
+							assertNoCrash(`${networkCall};`));
+						test('Simple call', () =>
+							assertNoCrash(
+								`function top() { ${networkCall} } top();`
+							));
+						test('Via call_user_func', () =>
+							assertNoCrash(
+								`function top() { ${networkCall} } call_user_func('top'); `
+							));
+						test('Via call_user_func_array', () =>
+							assertNoCrash(
+								`function top() { ${networkCall} } call_user_func_array('top', array());`
+							));
+					});
 
-				describe('Array functions', () => {
-					test('array_filter', () =>
-						assertNoCrash(`
+					describe('Array functions', () => {
+						test('array_filter', () =>
+							assertNoCrash(`
 							function top() { ${networkCall} }
 							array_filter(array('top'), 'top');
 						`));
 
-					test('array_map', () =>
-						assertNoCrash(`
-							function top() { ${networkCall} }
-							array_map(array('top'), 'top');
-						`));
+						test('array_map', () =>
+							assertNoCrash(`
+								function top() { ${networkCall} }
+								array_map(array('top'), 'top');
+							`));
 
-					// Network calls in sort() would be silly so let's skip those for now.
-				});
+						// Network calls in sort() would be silly so let's skip those for now.
+					});
 
-				describe('Class method calls', () => {
-					test('Regular method', () =>
-						assertNoCrash(`
+					describe('Class method calls', () => {
+						test('Regular method', () =>
+							assertNoCrash(`
 						class Top {
 							function my_method() { ${networkCall} }
 						}
 						$x = new Top();
 						$x->my_method();
 					`));
-					test('Via ReflectionMethod->invoke()', () =>
-						assertNoCrash(`
+						test('Via ReflectionMethod->invoke()', () =>
+							assertNoCrash(`
 						class Top {
 							function my_method() { ${networkCall} }
 						}
 						$reflectionMethod = new ReflectionMethod('Top', 'my_method');
 						$reflectionMethod->invoke(new Top());
 					`));
-					test('Via ReflectionMethod->invokeArgs()', () =>
-						assertNoCrash(`
+						test('Via ReflectionMethod->invokeArgs()', () =>
+							assertNoCrash(`
 						class Top {
 							function my_method() { ${networkCall} }
 						}
 						$reflectionMethod = new ReflectionMethod('Top', 'my_method');
 						$reflectionMethod->invokeArgs(new Top(), array());
 					`));
-					test('Via call_user_func', () =>
-						assertNoCrash(`
+						test('Via call_user_func', () =>
+							assertNoCrash(`
 						class Top {
 							function my_method() { ${networkCall} }
 						}
 						call_user_func([new Top(), 'my_method']);
 						`));
-					test('Via call_user_func_array', () =>
-						assertNoCrash(`
+						test('Via call_user_func_array', () =>
+							assertNoCrash(`
 						class Top {
 							function my_method() { ${networkCall} }
 						}
 						call_user_func_array([new Top(), 'my_method'], []);
 						`));
-					test('Constructor', () =>
-						assertNoCrash(`
+						test('Constructor', () =>
+							assertNoCrash(`
 						class Top {
 							function __construct() { ${networkCall} }
 						}
 						new Top();
 					`));
-					test('Destructor', () =>
-						assertNoCrash(`
+						test('Destructor', () =>
+							assertNoCrash(`
 						class Top {
 							function __destruct() { ${networkCall} }
 						}
 						$x = new Top();
 						unset($x);
 					`));
-					test('__call', () =>
-						assertNoCrash(`
+						test('__call', () =>
+							assertNoCrash(`
 						class Top {
 							function __call($method, $args) { ${networkCall} }
 						}
 						$x = new Top();
 						$x->test();
 					`));
-					test('__get', () =>
-						assertNoCrash(`
+						test('__get', () =>
+							assertNoCrash(`
 						class Top {
 							function __get($prop) { ${networkCall} }
 						}
 						$x = new Top();
 						$x->test;
 					`));
-					test('__set', () =>
-						assertNoCrash(`
+						test('__set', () =>
+							assertNoCrash(`
 						class Top {
 							function __set($prop, $value) { ${networkCall} }
 						}
 						$x = new Top();
 						$x->test = 1;
 					`));
-					test('__isset', () =>
-						assertNoCrash(`
+						test('__isset', () =>
+							assertNoCrash(`
 						class Top {
 							function __isset($prop) { ${networkCall} }
 						}
 						$x = new Top();
 						isset($x->test);
 					`));
-					test('offsetSet', () => {
-						assertNoCrash(`
+						test('ArrayAccess', () => {
+							assertNoCrash(`
 							class Top implements ArrayAccess {
 								function offsetExists($offset) { ${networkCall} }
 								function offsetGet($offset) { ${networkCall} }
@@ -234,9 +289,9 @@ const httpsServer = https.createServer(
 							$x['test'] = 123;
 							unset($x['test']);
 						`);
-					});
-					test('Iterator', () =>
-						assertNoCrash(`
+						});
+						test('Iterator', () =>
+							assertNoCrash(`
 						$data = new class() implements IteratorAggregate {
 							public function getIterator(): Traversable {
 								${networkCall};
@@ -247,8 +302,20 @@ const httpsServer = https.createServer(
 							...$data
 						] );
 					`));
-					test('yield', () =>
-						assertNoCrash(`
+
+						test('Countable', () =>
+							assertNoCrash(`
+						$data = new class() implements Countable {
+							public function count() {
+								${networkCall}
+								return 0;
+							}
+						};
+						count($data);
+					`));
+
+						test('yield', () =>
+							assertNoCrash(`
 						function countTo2() {
 							${networkCall};
 							yield '1';
@@ -259,26 +326,27 @@ const httpsServer = https.createServer(
 							echo $number;
 						}
 					`));
-				});
+					});
 
-				describe('exif extension support', () => {
-					it('exif_read_data', async () => {
-						assertNoCrash(
-							`var_dump(exif_read_data('${httpUrl}/image.jpg'));`
-						);
+					describe('exif extension support', () => {
+						it('exif_read_data', async () => {
+							assertNoCrash(
+								`var_dump(exif_read_data('${httpUrl}/image.jpg'));`
+							);
+						});
+						it('exif_imagetype', async () => {
+							assertNoCrash(
+								`var_dump(exif_imagetype('${httpUrl}/image.jpg'));`
+							);
+						});
+						it('exif_thumbnail', async () => {
+							assertNoCrash(
+								`var_dump(exif_thumbnail('${httpUrl}/image.jpg'));`
+							);
+						});
 					});
-					it('exif_imagetype', async () => {
-						assertNoCrash(
-							`var_dump(exif_imagetype('${httpUrl}/image.jpg'));`
-						);
-					});
-					it('exif_thumbnail', async () => {
-						assertNoCrash(
-							`var_dump(exif_thumbnail('${httpUrl}/image.jpg'));`
-						);
-					});
-				});
-			});
+				}
+			);
 
 			async function assertNoCrash(code: string) {
 				try {

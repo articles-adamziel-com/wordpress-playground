@@ -6,7 +6,7 @@ const require = createRequire(import.meta.url);
 const __dirname = new URL('.', import.meta.url).pathname;
 const dependencyFilename = __dirname + '/7_3_33/php_7_3.wasm';
 export { dependencyFilename };
-export const dependenciesTotalSize = 14999491;
+export const dependenciesTotalSize = 14999493;
 export function init(RuntimeName, PHPLoader) {
 	// The rest of the code comes from the built php.js file and esm-suffix.js
 	// include: shell.js

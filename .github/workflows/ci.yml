@@ -26,6 +26,21 @@ jobs:
     test-unit-asyncify:
         runs-on: wordpress-playground-private
         needs: [lint-and-typecheck]
+        services:
+            mysql:
+                image: mysql:5.7
+                env:
+                    MYSQL_DATABASE: test_db
+                    MYSQL_USER: user
+                    MYSQL_PASSWORD: password
+                    MYSQL_ROOT_PASSWORD: rootpassword
+                ports:
+                    - 3306:3306
+                options: >-
+                    --health-cmd="mysqladmin ping --silent"
+                    --health-interval=10s
+                    --health-timeout=5s
+                    --health-retries=3
         steps:
             - uses: actions/checkout@v4
               with:
@@ -34,6 +49,10 @@ jobs:
               with:
                   node-version: 20
             - run: node --expose-gc node_modules/nx/bin/nx affected --target=test --configuration=ci
+              env:
+                  MYSQL_DATABASE: test_db
+                  MYSQL_USER: user
+                  MYSQL_PASSWORD: password
     # Most of these tests pass locally but the process is crashing
     # on the CI runner.
     #
