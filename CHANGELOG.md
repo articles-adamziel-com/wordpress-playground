@@ -4,6 +4,19 @@ All notable changes to this project are documented in this file by a CI job
 that runs on every NPM release. The file follows the [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 format.
 
+## [v1.0.34] (2025-05-08) 
+
+### Various
+
+- Document mounting OPFS storage *after* the boot. ([#141](https://github.com/Automattic/wordpress-playground-private/pull/141))
+
+### Contributors
+
+The following contributors merged PRs in this release:
+
+@ashfame
+
+
 ## [v1.0.33] (2025-05-08) 
 
 ### Various
