@@ -178,14 +178,20 @@ jobs:
             - name: Generate a mock version number (for releasing the packages in a local registry) and store it as a global variable
               run: |
                   VERSION=$(date +%s)
-                  CURRENT_VERSION=$(jq -r '.version' lerna.json)
                   PORT=9934
                   PACKAGE_BASE_URL=http://127.0.0.1:$PORT/$VERSION
                   echo "VERSION=$VERSION" >> $GITHUB_ENV
                   echo "PORT=$PORT" >> $GITHUB_ENV
                   echo "PACKAGE_BASE_URL=$PACKAGE_BASE_URL" >> $GITHUB_ENV
-                  echo "PACKAGE_URL=$PACKAGE_BASE_URL/v$CURRENT_VERSION/@wp-playground-cli-$CURRENT_VERSION.tar.gz" >> $GITHUB_ENV
+                  echo "PACKAGE_URL=$PACKAGE_BASE_URL/v$VERSION/@wp-playground-cli-$VERSION.tar.gz" >> $GITHUB_ENV
                   echo "HOST_PATH=./dist/packages-for-self-hosting/http%3A%2F%2F127.0.0.1%3A$PORT%2F$VERSION" >> $GITHUB_ENV
+            - name: Update package.json versions
+              run: |
+                  VERSION=$(date +%s)
+                  for package in packages/*/*/package.json; do
+                    jq --arg version "$VERSION" '.version = $version' "$package" > "$package.tmp"
+                    mv "$package.tmp" "$package"
+                  done
             - name: Package repository
               run: |
                   npx nx run-many --all --target=package-for-self-hosting -- --hostingBaseUrl="$PACKAGE_BASE_URL"
@@ -208,6 +214,13 @@ jobs:
                   jq --arg package_url "$PACKAGE_URL" '.devDependencies["@wp-playground/cli"] = $package_url' package.json > package.json.tmp
                   mv package.json.tmp package.json
                   npm install
+                  INSTALLED_VERSION=$(npm ls @wp-playground/cli version --depth=0 | tail -n 2 | head -n 1 | cut -d ' ' -f 2)
+                  if [ "$INSTALLED_VERSION" != "@wp-playground/cli@$VERSION" ]; then
+                    echo "The installed version of @wp-playground/cli is not the same as the expected version."
+                    echo "Expected: $VERSION"
+                    echo "Installed: $INSTALLED_VERSION"
+                    exit 1
+                  fi
                   npm run test
             - name: Run integration tests in a CommonJS project
               run: |
@@ -215,6 +228,13 @@ jobs:
                   jq --arg package_url "$PACKAGE_URL" '.devDependencies["@wp-playground/cli"] = $package_url' package.json > package.json.tmp
                   mv package.json.tmp package.json
                   npm install
+                  INSTALLED_VERSION=$(npm ls @wp-playground/cli version --depth=0 | tail -n 2 | head -n 1 | cut -d ' ' -f 2)
+                  if [ "$INSTALLED_VERSION" != "@wp-playground/cli@$VERSION" ]; then
+                    echo "The installed version of @wp-playground/cli is not the same as the expected version."
+                    echo "Expected: $VERSION"
+                    echo "Installed: $INSTALLED_VERSION"
+                    exit 1
+                  fi
                   npm run test
 
     build:
