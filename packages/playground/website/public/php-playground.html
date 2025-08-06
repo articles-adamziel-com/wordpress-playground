@@ -2,6 +2,10 @@
 <html lang="en">
 	<head>
 		<meta charset="UTF-8" />
+		<meta
+			name="viewport"
+			content="width=device-width, initial-scale=1.0, user-scalable=yes"
+		/>
 		<title>WordPress PHP Playground</title>
 		<style>
 			html,
@@ -52,6 +56,26 @@
 				display: flex;
 				align-items: center;
 				gap: 8px;
+			}
+
+			.controls-right button {
+				padding: 6px 12px;
+				border: 1px solid #ccc;
+				border-radius: 4px;
+				background: white;
+				cursor: pointer;
+				transition: background-color 0.2s;
+			}
+
+			.controls-right button:hover {
+				background: #f0f0f0;
+			}
+
+			.controls-right select {
+				padding: 6px 8px;
+				border: 1px solid #ccc;
+				border-radius: 4px;
+				background: white;
 			}
 
 			#helpBtn {
@@ -228,17 +252,158 @@
 			}
 
 			/* Responsive layout: stack panes on small screens */
-			@media (max-width: 900px) {
+			@media (max-width: 1200px) {
 				#app {
 					flex-direction: column;
 				}
 				#previewPane {
-					height: 50vh;
+					height: 45vh;
 					min-width: 0;
 				}
+				#editorPane {
+					min-width: 0;
+				}
+			}
+
+			/* Tablet and small desktop adjustments */
+			@media (max-width: 900px) {
+				.controls h1 {
+					font-size: 16px;
+				}
+				.controls-right {
+					gap: 6px;
+				}
+				.controls-right label,
+				.controls-right select,
+				.controls-right button,
+				.controls-right a {
+					font-size: 14px;
+				}
+				#previewPane {
+					height: 40vh;
+				}
+			}
+
+			/* Mobile phone adjustments */
+			@media (max-width: 768px) {
+				.controls {
+					flex-direction: column;
+					align-items: stretch;
+					gap: 8px;
+					padding: 12px;
+				}
+				.controls h1 {
+					font-size: 14px;
+					text-align: center;
+					margin-bottom: 4px;
+				}
+				.controls-right {
+					justify-content: center;
+					flex-wrap: wrap;
+					gap: 8px;
+				}
+				.controls-right button {
+					padding: 8px 12px;
+					min-height: 44px; /* Touch-friendly */
+				}
+				.controls-right select {
+					min-height: 44px; /* Touch-friendly */
+				}
+				#previewPane {
+					height: 35vh;
+				}
+				#editor .cm-editor {
+					font-size: 13px;
+				}
+			}
+
+			/* Small mobile adjustments */
+			@media (max-width: 480px) {
+				.controls {
+					padding: 8px;
+				}
+				.controls h1 {
+					font-size: 13px;
+				}
+				.controls-right {
+					font-size: 13px;
+				}
+				.controls-right button,
+				.controls-right select {
+					min-height: 40px;
+					font-size: 13px;
+				}
+				#helpBtn {
+					font-size: 12px;
+				}
+				#previewPane {
+					height: 30vh;
+				}
+				#editor .cm-editor {
+					font-size: 12px;
+					line-height: 1.3;
+				}
+			}
+
+			/* Modal responsive styles */
+			@media (max-width: 768px) {
 				.modal-content {
-					margin: 10px;
-					max-width: calc(100% - 20px);
+					margin: 5px;
+					max-width: calc(100% - 10px);
+					max-height: calc(100vh - 10px);
+					border-radius: 6px;
+					padding: 16px;
+				}
+				.modal-header h2 {
+					font-size: 18px;
+				}
+				.modal-body {
+					font-size: 14px;
+				}
+				.modal-body h3 {
+					font-size: 16px;
+				}
+				.modal-body h4 {
+					font-size: 15px;
+				}
+				.modal-body pre {
+					font-size: 11px !important;
+					overflow-x: auto;
+					white-space: pre-wrap;
+					word-break: break-all;
+				}
+			}
+
+			/* Very small screens */
+			@media (max-width: 360px) {
+				.controls-right {
+					flex-direction: column;
+					align-items: center;
+				}
+				.controls-right button,
+				.controls-right select {
+					width: 100%;
+					max-width: 200px;
+				}
+			}
+
+			/* Landscape phone orientation */
+			@media (max-height: 500px) and (orientation: landscape) {
+				#app {
+					flex-direction: row;
+				}
+				#previewPane {
+					height: auto;
+					width: 50%;
+				}
+				.controls {
+					padding: 4px 8px;
+				}
+				.controls h1 {
+					font-size: 12px;
+				}
+				.controls-right {
+					gap: 4px;
 				}
 			}
 		</style>
