@@ -1,0 +1,11 @@
+{
+	"name": "php-wasm-7.2",
+	"$schema": "../../../node_modules/nx/schemas/project-schema.json",
+	"sourceRoot": "packages/php-wasm-versions/php-7.2",
+	"projectType": "library",
+	"targets": {
+		"build": {
+			"executor": "nx:noop"
+		}
+	}
+}

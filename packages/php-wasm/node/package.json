@@ -36,11 +36,30 @@
 		"access": "public",
 		"directory": "../../../dist/packages/php-wasm/node"
 	},
+	"files": [
+		"bin",
+		"index.cjs",
+		"index.js",
+		"index.d.ts",
+		"src",
+		"lib",
+		"README.md"
+	],
 	"license": "GPL-2.0-or-later",
 	"types": "index.d.ts",
 	"gitHead": "2f8d8f3cea548fbd75111e8659a92f601cddc593",
 	"engines": {
 		"node": ">=20.18.3",
 		"npm": ">=10.1.0"
+	},
+	"optionalDependencies": {
+		"@php-wasm/php-8.4": "^2.0.8",
+		"@php-wasm/php-8.3": "^2.0.8",
+		"@php-wasm/php-8.2": "^2.0.8",
+		"@php-wasm/php-8.1": "^2.0.8",
+		"@php-wasm/php-8.0": "^2.0.8",
+		"@php-wasm/php-7.4": "^2.0.8",
+		"@php-wasm/php-7.3": "^2.0.8",
+		"@php-wasm/php-7.2": "^2.0.8"
 	}
 }

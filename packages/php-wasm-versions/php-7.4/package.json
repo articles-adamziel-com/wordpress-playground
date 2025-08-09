@@ -1,0 +1,14 @@
+{
+	"name": "@php-wasm/php-7.4",
+	"version": "2.0.8",
+	"type": "module",
+	"main": "index.js",
+	"exports": {
+		"./asyncify": "./asyncify/index.js",
+		"./jspi": "./jspi/index.js"
+	},
+	"publishConfig": {
+		"access": "public",
+		"directory": "../../../dist/packages/php-wasm-versions/php-7.4"
+	}
+}
