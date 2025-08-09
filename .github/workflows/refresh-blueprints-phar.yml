@@ -1,0 +1,55 @@
+name: 'Refresh Blueprints.phar'
+
+on:
+    workflow_dispatch:
+    schedule:
+        - cron: '0 9 * * *'
+
+jobs:
+    build_and_deploy:
+        if: >
+            github.ref == 'refs/heads/trunk' && (
+                github.actor == 'adamziel' ||
+                github.actor == 'dmsnell' ||
+                github.actor == 'bgrgicak' ||
+                github.actor == 'brandonpayton' ||
+                github.actor == 'zaerl' ||
+                github.actor == 'janjakes'
+            )
+        runs-on: ubuntu-latest
+        environment:
+            name: wordpress-assets
+        steps:
+            - uses: actions/checkout@v4
+              with:
+                  ref: ${{ github.event.pull_request.head.ref }}
+                  clean: true
+                  persist-credentials: false
+                  submodules: true
+            - name: Download Blueprints.phar
+              shell: bash
+              run: |
+                  curl -L https://github.com/WordPress/blueprints/releases/latest/download/blueprints.phar \
+                      -o packages/playground/cli/public/blueprints.phar
+                  cp packages/playground/cli/public/blueprints.phar \
+                     packages/playground/website/demos/blueprints.phar
+            - name: Check for uncommitted changes
+              id: changes
+              run: |
+                  if [ -z "$(git status --porcelain)" ]; then
+                      echo 'CHANGES=0' >> $GITHUB_OUTPUT
+                  else
+                      echo 'CHANGES=1' >> $GITHUB_OUTPUT
+                  fi
+            - name: Push changes to GitHub
+              if: steps.changes.outputs.CHANGES == '1'
+              run: |
+                  git config --global user.name "deployment_bot"
+                  git config --global user.email "deployment_bot@users.noreply.github.com"
+                  git remote set-url origin https://${{ secrets.GH_ACTOR }}:${{ secrets.GH_TOKEN }}@github.com/${{ github.repository }}
+                  git add packages/playground/cli/public/blueprints.phar packages/playground/website/demos/blueprints.phar
+                  git commit -m "Refresh Blueprints.phar"
+                  git pull --rebase
+                  if [ $? -eq 0 ]; then
+                      git push origin HEAD:trunk
+                  fi
