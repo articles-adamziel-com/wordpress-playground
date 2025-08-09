@@ -33,18 +33,6 @@ export default defineConfig(({ command }) => {
 					}
 				},
 			},
-			{
-				name: 'ignore-data-imports',
-
-				load(id: string): any {
-					if (id?.endsWith('.dat')) {
-						return {
-							code: 'export default {}',
-							map: null,
-						};
-					}
-				},
-			},
 			/**
 			 * Vite can't extract static asset in the library mode:
 			 * https://github.com/vitejs/vite/issues/3295
@@ -81,28 +69,6 @@ export default defineConfig(({ command }) => {
 					}
 				},
 			},
-			{
-				name: 'preserve-data-loaders-imports',
-
-				resolveDynamicImport(specifier): string | void {
-					if (
-						command === 'build' &&
-						typeof specifier === 'string' &&
-						specifier.match(/icudt74l\.js$/)
-					) {
-						/**
-						 * The ../ is weird but necessary to make the final build say
-						 * import("./shared/icudt74l.js")
-						 * and not
-						 * import("shared/icudt74l.js")
-						 *
-						 * The slice(-2) will ensure the 'public/`
-						 * portion is removed.
-						 */
-						return '../' + specifier.split('/').slice(-2).join('/');
-					}
-				},
-			},
 		],
 
 		// Configuration for building your library.
@@ -119,11 +85,7 @@ export default defineConfig(({ command }) => {
 			rollupOptions: {
 				// Don't bundle the PHP loaders in the final build. See
 				// the preserve-php-loaders-imports plugin above.
-				external: [
-					/php_\d_\d.js$/,
-					/icudt74l.js$/,
-					...getExternalModules(),
-				],
+				external: [/php_\d_\d.js$/, ...getExternalModules()],
 			},
 		},
 

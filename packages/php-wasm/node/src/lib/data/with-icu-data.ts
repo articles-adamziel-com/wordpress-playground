@@ -1,12 +1,13 @@
 import type { EmscriptenOptions, PHPRuntime } from '@php-wasm/universal';
 import { FSHelpers } from '@php-wasm/universal';
+import { resolveAssetFilePath } from '@php-wasm/assets';
 import fs from 'fs';
 
 export async function withICUData(
 	options: EmscriptenOptions
 ): Promise<EmscriptenOptions> {
 	const fileName = 'icudt74l.dat';
-	const filePath = `${__dirname}/shared/${fileName}`;
+	const filePath = await resolveAssetFilePath(fileName, '@php-wasm/node');
 	const ICUData = fs.readFileSync(filePath);
 
 	return {

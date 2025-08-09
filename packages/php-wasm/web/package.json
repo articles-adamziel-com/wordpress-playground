@@ -21,12 +21,16 @@
 		"displayName": "@php-wasm/web",
 		"tsconfig": "./tsconfig.lib.json"
 	},
+	"dependencies": {
+		"@php-wasm/assets": "2.0.8"
+	},
 	"exports": {
 		".": {
 			"import": "./index.js",
 			"require": "./index.cjs"
 		},
-		"./package.json": "./package.json"
+		"./package.json": "./package.json",
+		"./shared/*": "./shared/*"
 	},
 	"publishConfig": {
 		"access": "public",

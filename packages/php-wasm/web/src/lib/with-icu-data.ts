@@ -1,14 +1,14 @@
 import type { EmscriptenOptions, PHPRuntime } from '@php-wasm/universal';
 import { FSHelpers } from '@php-wasm/universal';
+import { fetchAsset } from '@php-wasm/assets';
 
 export async function withICUData(
 	options: EmscriptenOptions
 ): Promise<EmscriptenOptions> {
 	const fileName = 'icudt74l.dat';
-	// @ts-ignore
-	const filePath = (await import('../../public/shared/icudt74l.js'))
-		.dataFilename;
-	const ICUData = await (await fetch(filePath)).arrayBuffer();
+	const ICUData = await fetchAsset(fileName, {
+		packageName: '@php-wasm/web',
+	});
 
 	return {
 		...options,

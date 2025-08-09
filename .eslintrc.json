@@ -59,7 +59,8 @@
 						"tabSize": 0,
 						"ignoreUrls": true
 					}
-				]
+				],
+				"playground-dev/no-static-asset-imports": "error"
 			}
 		},
 		{
