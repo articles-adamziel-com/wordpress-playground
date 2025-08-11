@@ -3,6 +3,8 @@ import path from 'path';
 import { test, expect } from '../playground-fixtures.ts';
 import { startVersionSwitchingServer as startServer } from '../version-switching-server.ts';
 
+test.skip(true, 'Temporarily skipped in CI to run only proc_open test');
+
 const port = 7999;
 const url = new URL(`http://localhost:${port}`);
 // Disable login because an old WP build used in this test

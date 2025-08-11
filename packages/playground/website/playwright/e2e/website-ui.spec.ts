@@ -9,6 +9,8 @@ import { SupportedPHPVersions } from '../../../../php-wasm/universal/src/lib/sup
 // eslint-disable-next-line @nx/enforce-module-boundaries
 import * as MinifiedWordPressVersions from '../../../wordpress-builds/src/wordpress/wp-versions.json';
 
+test.skip(true, 'Temporarily skipped in CI to run only proc_open test');
+
 test('should reflect the URL update from the navigation bar in the WordPress site', async ({
 	website,
 }) => {

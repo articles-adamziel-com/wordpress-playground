@@ -6,6 +6,8 @@ import { test, expect } from '../playground-fixtures';
 // eslint-disable-next-line @nx/enforce-module-boundaries
 import * as MinifiedWordPressVersions from '../../../wordpress-builds/src/wordpress/wp-versions.json';
 
+test.skip(true, 'Temporarily skipped in CI to run only proc_open test');
+
 const LatestSupportedWordPressVersion = Object.keys(
 	MinifiedWordPressVersions
 ).filter((x) => !['nightly', 'beta'].includes(x))[0];

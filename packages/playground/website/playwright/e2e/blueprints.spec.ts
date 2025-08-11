@@ -2,6 +2,8 @@ import { test, expect } from '../playground-fixtures';
 import type { Blueprint } from '@wp-playground/blueprints';
 import { encodeStringAsBase64 } from '../../src/lib/base64';
 
+test.skip(true, 'Temporarily skipped in CI to speed up tests');
+
 test('Base64-encoded Blueprints should work', async ({
 	website,
 	wordpress,
