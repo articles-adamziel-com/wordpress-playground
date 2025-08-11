@@ -47,6 +47,9 @@ export function sandboxedSpawnHandlerFactory(
 			processApi.on('stdin', (data: Uint8Array) => {
 				processApi.stdout(data);
 			});
+			await new Promise<void>((resolve) => {
+				processApi.on('stdinEnd', () => resolve());
+			});
 			processApi.exit(0);
 		} else if (binaryName === 'php') {
 			const { php, reap } = await processManager.acquirePHPInstance({

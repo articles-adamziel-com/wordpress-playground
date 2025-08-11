@@ -109,6 +109,10 @@ export class ProcessApi extends EventEmitterPolyfill {
 				this.emit('stdin', data);
 			}
 		});
+		// Emit an event when stdin is finished so consumers can await it
+		childProcess.stdin.on('finish', () => {
+			this.emit('stdinEnd');
+		});
 	}
 	stdinEnd() {
 		if (!this.childProcess.stdin.ended) {
