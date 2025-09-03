@@ -33,7 +33,7 @@ jobs:
               run: |
                   source "$HOME/.cargo/env"
                   mkdir php-rust
-                  c2rust transpile php-src -o php-rust --overwrite
+                  c2rust transpile php-src -o php-rust --overwrite-existing
 
             - name: Build Rust binary
               run: |
