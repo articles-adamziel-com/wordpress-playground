@@ -1,0 +1,36 @@
+diff --git a/php-src/ext/mysqlnd/mysqlnd_connection.c b/php-src/ext/mysqlnd/mysqlnd_connection.c
+--- a/php-src/ext/mysqlnd/mysqlnd_connection.c
++++ b/php-src/ext/mysqlnd/mysqlnd_connection.c
+@@
+-    MYSQLND_STRING transport;
+-    DBG_ENTER("mysqlnd_conn_data::get_scheme");
++    MYSQLND_STRING transport;
++    DBG_ENTER("mysqlnd_conn_data::get_scheme");
++
++    /* Force TCP for 'localhost' in Emscripten/Node builds.
++       Only rewrite when no unix socket/pipe was explicitly requested. */
++#ifdef MYSQLND_FORCE_TCP_LOCALHOST
++    if (hostname.s && hostname.l == sizeof("localhost") - 1
++        && !strncasecmp(hostname.s, "localhost", hostname.l)) {
++        if (!socket_or_pipe || !socket_or_pipe->s || socket_or_pipe->l == 0) {
++            hostname.s = "127.0.0.1";
++            hostname.l = sizeof("127.0.0.1") - 1;
++            if (socket_or_pipe) {
++                socket_or_pipe->s = NULL;
++                socket_or_pipe->l = 0;
++            }
++        }
++    }
++#endif
+ #ifndef PHP_WIN32
+     if (hostname.l == sizeof("localhost") - 1 && !strncasecmp(hostname.s, "localhost", hostname.l)) {
+         DBG_INF_FMT("socket=%s", socket_or_pipe->s? socket_or_pipe->s:"n/a");
+         if (!socket_or_pipe->s) {
+             socket_or_pipe->s = "/tmp/mysql.sock";
+             socket_or_pipe->l = strlen(socket_or_pipe->s);
+         }
+         transport.l = mnd_sprintf(&transport.s, 0, "unix://%s", socket_or_pipe->s);
+         *unix_socket = TRUE;
+ #else
+     if (hostname.l == sizeof(".") - 1 && hostname.s[0] == '.') {
+         /* named pipe in socket */
