@@ -1,0 +1,55 @@
+name: Build PHP 8.4 via c2rust
+
+on:
+    workflow_dispatch:
+    pull_request:
+        paths:
+            - '.github/workflows/php84-c2rust.yml'
+
+jobs:
+    build:
+        runs-on: ubuntu-latest
+        steps:
+            - name: Checkout repository
+              uses: actions/checkout@v4
+
+            - name: Install build dependencies
+              run: |
+                  sudo apt-get update
+                  sudo apt-get install -y build-essential curl git cmake pkg-config \
+                      libssl-dev libxml2-dev bison re2c autoconf automake libtool \
+                      clang libclang-dev llvm-dev bear
+
+            - name: Install Rust and c2rust
+              run: |
+                  curl https://sh.rustup.rs -sSf | sh -s -- -y
+                  source "$HOME/.cargo/env"
+                  cargo install c2rust
+
+            - name: Fetch PHP 8.4 source
+              run: git clone --depth=1 --branch PHP-8.4 https://github.com/php/php-src.git
+
+            - name: Build PHP and capture compile commands
+              run: |
+                  cd php-src
+                  ./buildconf --force
+                  ./configure
+                  bear -- make -j$(nproc)
+
+            - name: Transpile PHP to Rust
+              run: |
+                  source "$HOME/.cargo/env"
+                  c2rust transpile php-src/compile_commands.json \
+                      --output-dir php-rust --overwrite-existing --emit-build-files
+
+            - name: Build Rust binary
+              run: |
+                  source "$HOME/.cargo/env"
+                  cd php-rust
+                  cargo build --release
+
+            - name: Upload artifact
+              uses: actions/upload-artifact@v4
+              with:
+                  name: php84-rust
+                  path: php-rust/target/release/
