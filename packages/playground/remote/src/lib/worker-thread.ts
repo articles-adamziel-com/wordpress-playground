@@ -28,6 +28,7 @@ import {
 	hasCachedStaticFilesRemovedFromMinifiedBuild,
 } from './worker-utils';
 import { EmscriptenDownloadMonitor } from '@php-wasm/progress';
+import { ProgressTracker, type ProgressReceiver } from '@php-wasm/progress';
 import {
 	createMemoizedFetch,
 	RecommendedPHPVersion,
@@ -58,6 +59,13 @@ import {
 	intlDisabledFunctions,
 	networkingDisabledFunctions,
 } from './disabled-functions';
+import {
+	compileBlueprint,
+	runBlueprintSteps,
+	type Blueprint,
+	type OnStepCompleted,
+	type CompiledBlueprint,
+} from '@wp-playground/blueprints';
 import { WordPressFetchNetworkTransport } from './wordpress-fetch-network-transport';
 /* @ts-ignore */
 import { corsProxyUrl as defaultCorsProxyUrl } from 'virtual:cors-proxy-url';
@@ -83,11 +91,15 @@ export type WorkerBootOptions = {
 	phpVersion?: SupportedPHPVersion;
 	sapiName?: string;
 	scope: string;
-	withICU: boolean;
-	withNetworking: boolean;
+	withICU?: boolean;
+	withNetworking?: boolean;
 	mounts?: Array<MountDescriptor>;
 	shouldInstallWordPress?: boolean;
 	corsProxyUrl?: string;
+	blueprint?: Blueprint;
+	blueprintProgress?: ProgressReceiver;
+	onBlueprintStepCompleted?: OnStepCompleted;
+	onBeforeBlueprint?: () => Promise<void>;
 };
 
 /** @inheritDoc PHPClient */
@@ -178,14 +190,18 @@ export class PlaygroundWorkerEndpoint extends PHPWorker {
 	async boot({
 		scope,
 		mounts = [],
-		wpVersion = LatestMinifiedWordPressVersion,
+		wpVersion,
 		sqliteDriverVersion = LatestSqliteDriverVersion,
-		phpVersion = RecommendedPHPVersion,
+		phpVersion,
 		sapiName = 'cli',
-		withICU = false,
-		withNetworking = true,
+		withICU,
+		withNetworking,
 		shouldInstallWordPress = true,
 		corsProxyUrl,
+		blueprint,
+		blueprintProgress,
+		onBlueprintStepCompleted,
+		onBeforeBlueprint,
 	}: WorkerBootOptions) {
 		if (this.booted) {
 			throw new Error('Playground already booted');
@@ -194,9 +210,31 @@ export class PlaygroundWorkerEndpoint extends PHPWorker {
 		if (corsProxyUrl === undefined) {
 			corsProxyUrl = defaultCorsProxyUrl;
 		}
-
 		this.booted = true;
 		this.scope = scope;
+
+		let compiled: CompiledBlueprint | undefined;
+		if (blueprint) {
+			const progress = new ProgressTracker();
+			if (blueprintProgress) {
+				progress.pipe(blueprintProgress);
+			}
+			compiled = await compileBlueprint(blueprint, {
+				progress,
+				onStepCompleted: onBlueprintStepCompleted,
+				corsProxy: corsProxyUrl,
+			});
+			wpVersion = compiled.versions.wp;
+			phpVersion = compiled.versions.php;
+			withICU = compiled.features.intl;
+			withNetworking = compiled.features.networking;
+		}
+
+		wpVersion = wpVersion ?? LatestMinifiedWordPressVersion;
+		phpVersion = phpVersion ?? RecommendedPHPVersion;
+		withICU = withICU ?? false;
+		withNetworking = withNetworking ?? true;
+
 		this.requestedWordPressVersion = wpVersion;
 
 		wpVersion = MinifiedWordPressVersionsList.includes(wpVersion)
@@ -510,6 +548,16 @@ export class PlaygroundWorkerEndpoint extends PHPWorker {
 			}
 
 			setApiReady();
+
+			if (compiled) {
+				if (onBeforeBlueprint) {
+					await onBeforeBlueprint();
+				}
+				await runBlueprintSteps(compiled, this);
+				if (compiled.features.networking) {
+					await this.prefetchUpdateChecks();
+				}
+			}
 		} catch (e) {
 			setAPIError(e as Error);
 			throw e;

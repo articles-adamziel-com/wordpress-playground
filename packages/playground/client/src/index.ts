@@ -26,7 +26,6 @@ export { phpVar, phpVars } from '@php-wasm/util';
 export type { PlaygroundClient, MountDescriptor };
 
 import type { Blueprint, OnStepCompleted } from '@wp-playground/blueprints';
-import { compileBlueprint, runBlueprintSteps } from '@wp-playground/blueprints';
 import { consumeAPI } from '@php-wasm/web';
 import { ProgressTracker } from '@php-wasm/progress';
 import type { MountDescriptor, PlaygroundClient } from '@wp-playground/remote';
@@ -126,12 +125,6 @@ export async function startPlaygroundWeb({
 		blueprint = {};
 	}
 
-	const compiled = await compileBlueprint(blueprint, {
-		progress: progressTracker.stage(0.5),
-		onStepCompleted: onBlueprintStepCompleted,
-		corsProxy,
-	});
-
 	await new Promise((resolve) => {
 		iframe.src = remoteUrl;
 		iframe.addEventListener('load', resolve, false);
@@ -145,39 +138,40 @@ export async function startPlaygroundWeb({
 	) as PlaygroundClient;
 	await playground.isConnected();
 	progressTracker.pipe(playground);
+
+	// Blueprint compilation progress accounts for half of the total progress.
+	const blueprintProgress = progressTracker.stage(0.5);
 	const downloadPHPandWP = progressTracker.stage();
+
 	await playground.onDownloadProgress(downloadPHPandWP.loadingListener);
+
+	onClientConnected(playground);
+
 	await playground.boot({
 		mounts,
 		sapiName,
 		scope: scope ?? Math.random().toFixed(16),
 		shouldInstallWordPress,
-		phpVersion: compiled.versions.php,
-		wpVersion: compiled.versions.wp,
-		withICU: compiled.features.intl,
-		withNetworking: compiled.features.networking,
+		blueprint,
 		corsProxyUrl: corsProxy,
 		sqliteDriverVersion,
+		blueprintProgress: {
+			setProgress: ({ progress, caption }) => {
+				if (caption) {
+					blueprintProgress.setCaption(caption);
+				}
+				blueprintProgress.set(progress);
+			},
+			setLoaded: () => blueprintProgress.finish(),
+		},
+		onBlueprintStepCompleted,
+		onBeforeBlueprint,
 	});
 	await playground.isReady();
 	downloadPHPandWP.finish();
 
 	collectPhpLogs(logger, playground);
-	onClientConnected(playground);
 
-	if (onBeforeBlueprint) {
-		await onBeforeBlueprint();
-	}
-
-	await runBlueprintSteps(compiled, playground);
-	/**
-	 * Pre-fetch WordPress update checks to speed up the initial wp-admin load.
-	 *
-	 * @see https://github.com/WordPress/wordpress-playground/pull/2295
-	 */
-	if (compiled.features.networking) {
-		await playground.prefetchUpdateChecks();
-	}
 	progressTracker.finish();
 
 	return playground;
