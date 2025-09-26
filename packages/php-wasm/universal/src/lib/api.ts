@@ -374,7 +374,12 @@ function streamToPort(stream: ReadableStream<Uint8Array>): MessagePort {
 			}
 		} catch (e: any) {
 			try {
-				port1.postMessage({ t: 'error', m: e?.message || String(e) });
+				// @TODO: Find a way to transfer the error object, including any stack trace etc.,
+				//        using the error transfer handlers.
+				port1.postMessage({
+					t: 'error',
+					m: e?.message || JSON.stringify(e),
+				});
 			} catch {
 				// Ignore error
 			}
@@ -407,10 +412,24 @@ function portToStream(port: MessagePort): ReadableStream<Uint8Array> {
 						controller.close();
 						cleanup();
 						break;
-					case 'error':
-						controller.error(new Error(data.m || 'Stream error'));
+					case 'error': {
+						let error = '';
+						try {
+							error = JSON.parse(data.m);
+						} catch {
+							// Ignore error
+						}
+						if (!error) {
+							error = data.m;
+						}
+						if (typeof error === 'string') {
+							controller.error(new Error(error));
+						} else {
+							controller.error(error);
+						}
 						cleanup();
 						break;
+					}
 				}
 			};
 			const cleanup = () => {
@@ -475,7 +494,7 @@ function promiseToPort(promise: Promise<any>): MessagePort {
 			try {
 				port1.postMessage({
 					t: 'reject',
-					m: (err as any)?.message || String(err),
+					m: (err as any)?.message || JSON.stringify(err),
 				});
 			} catch {
 				// Ignore error
@@ -504,8 +523,20 @@ function portToPromise(port: MessagePort): Promise<any> {
 				cleanup();
 				resolve(data.v);
 			} else if (data.t === 'reject') {
+				// @TODO: Find a way to transfer the error object, including any stack trace etc.,
+				//        using the error transfer handlers.
 				cleanup();
-				reject(new Error(data.m || ''));
+				let error = '';
+				try {
+					error = JSON.parse(data.m);
+				} catch {
+					// Ignore error
+				}
+				if (typeof error === 'string') {
+					reject(new Error(error));
+				} else {
+					reject(error);
+				}
 			}
 		};
 		const cleanup = () => {

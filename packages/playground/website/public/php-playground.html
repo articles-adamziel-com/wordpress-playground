@@ -1048,6 +1048,9 @@ var_dump($html_processor->get_tag());
 						if (process.aborted) {
 							return;
 						}
+						await new Promise((resolve) =>
+							setTimeout(resolve, 1000)
+						);
 						process.aborted = true;
 						abortedPromise.resolve();
 
@@ -1063,7 +1066,6 @@ var_dump($html_processor->get_tag());
 				const callbackSink = (callback) =>
 					new WritableStream({
 						write(chunk) {
-							console.log({ chunk });
 							if (process.aborted) {
 								return;
 							}
@@ -1081,11 +1083,14 @@ var_dump($html_processor->get_tag());
 
 				response.stderr
 					.pipeThrough(new TextDecoderStream())
-					.pipeTo(callbackSink(writeStderr));
+					.pipeTo(callbackSink(writeStderr))
+					.catch((error) => {
+						console.log('catch', error);
+					});
 
 				const exitCode = await Promise.race([
 					response.exitCode,
-					abortedPromise.promise.then(() => 130),
+					// abortedPromise.promise.then(() => 130),
 				]);
 
 				currentProcess = null;
@@ -1113,27 +1118,6 @@ var_dump($html_processor->get_tag());
 							term.writeln(
 								'\r\nAvailable commands:\r\n  help        Show this message\r\n  php <...>  Run PHP CLI arguments\r\n  wp <...>   Run WP-CLI (auto-downloads if needed)\r\n  composer <...>  Run Composer (auto-downloads if needed)'
 							);
-							break;
-						}
-						case 'ls': {
-							(
-								(await client.listFiles(args[0] || '/')) || []
-							).forEach((line) => {
-								term.writeln(line);
-							});
-							break;
-						}
-						case 'php': {
-							if (!args.length) {
-								term.writeln('\r\nUsage: php <arguments>');
-								break;
-							}
-							const result = await runCli(['php', ...args]);
-							if (!result.aborted && result.exitCode !== 0) {
-								term.writeln(
-									`\r\nProcess exited with code ${result.exitCode}`
-								);
-							}
 							break;
 						}
 						case 'wp': {
@@ -1165,8 +1149,26 @@ var_dump($html_processor->get_tag());
 							}
 							break;
 						}
-						default:
-							term.writeln(`\r\n${command}: command not found`);
+						default: {
+							if (!args.length) {
+								term.writeln('\r\nUsage: php <arguments>');
+								break;
+							}
+							const result = await runCli(parts);
+							if (result.exitCode === 127) {
+								term.writeln(
+									`\r\n${command}: command not found`
+								);
+							} else if (
+								!result.aborted &&
+								result.exitCode !== 0
+							) {
+								term.writeln(
+									`\r\nProcess exited with code ${result.exitCode}`
+								);
+							}
+							break;
+						}
 					}
 				} catch (error) {
 					const message = error?.message || String(error);

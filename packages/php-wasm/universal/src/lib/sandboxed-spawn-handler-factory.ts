@@ -40,9 +40,11 @@ export function sandboxedSpawnHandlerFactory(
 			// @TODO: Do not hardcode this
 			processApi.stdout(`18 140`);
 			processApi.exit(0);
+			return;
 		} else if (binaryName === 'tput' && args[1] === 'cols') {
 			processApi.stdout(`140`);
 			processApi.exit(0);
+			return;
 		} else if (binaryName === 'less') {
 			processApi.on('stdin', (data: Uint8Array) => {
 				processApi.stdout(data);
@@ -55,13 +57,17 @@ export function sandboxedSpawnHandlerFactory(
 			});
 			processApi.exit(0);
 			return;
-		} else if (binaryName === 'php') {
-			const { php, reap } = await processManager.acquirePHPInstance({
-				considerPrimary: false,
-			});
+		}
 
-			php.chdir(options.cwd as string);
-			try {
+		// Binaries requiring PHP to be running.
+		const { php, reap } = await processManager.acquirePHPInstance({
+			considerPrimary: false,
+		});
+
+		try {
+			php.chdir((options.cwd as string) ?? '/');
+
+			if (binaryName === 'php') {
 				// Figure out more about setting env, putenv(), etc.
 				const result = await php.cli(args, {
 					env: {
@@ -89,15 +95,23 @@ export function sandboxedSpawnHandlerFactory(
 					})
 				);
 				processApi.exit(await result.exitCode);
-			} catch (e) {
-				// An exception here means the PHP runtime has crashed.
-				processApi.exit(1);
-				throw e;
-			} finally {
-				reap();
+			} else if (binaryName === 'ls') {
+				const files = php.listFiles(args[1] || '/');
+				files.forEach((file) => {
+					processApi.stdout(file + '\n');
+				});
+				await new Promise((resolve) => setTimeout(resolve, 10));
+				processApi.exit(0);
+			} else {
+				// 127 is the exit code for command not found.
+				processApi.exit(127);
 			}
-		} else {
+		} catch (e) {
+			// An exception here means the PHP runtime has crashed.
 			processApi.exit(1);
+			throw e;
+		} finally {
+			reap();
 		}
 	});
 }
