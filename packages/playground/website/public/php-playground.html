@@ -1004,13 +1004,28 @@ var_dump($html_processor->get_tag());
 				}
 				term.writeln('\r\nDownloading Composer...');
 				const response = await fetch(
-					'https://wordpress-playground-cors-proxy.net/?https://getcomposer.org/composer-stable.phar'
+					'https://wordpress-playground-cors-proxy.net/?https://getcomposer.org/download/2.8.12/composer.phar'
 				);
 				if (!response.ok) {
 					throw new Error('Failed to download Composer');
 				}
 				const buffer = await response.arrayBuffer();
-				await client.writeFile(COMPOSER_PATH, new Uint8Array(buffer));
+				await client.writeFile(
+					COMPOSER_PATH + '.bin',
+					new Uint8Array(buffer)
+				);
+				await client.writeFile(
+					COMPOSER_PATH,
+					`<?php
+					// Composer assumes the grapheme_strlen function is available
+					// and will crash if it's not. Symfony Polyfills somehow do
+					// not kick in in this case.
+					function grapheme_strlen($string) {
+						return strlen($string);
+					}
+					require_once __FILE__ . '.bin';
+				`
+				);
 				term.writeln('Download complete.');
 			}
 
