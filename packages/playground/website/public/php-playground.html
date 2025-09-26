@@ -1014,28 +1014,32 @@ var_dump($html_processor->get_tag());
 				term.writeln('Download complete.');
 			}
 
+			function invertPromise() {
+				let resolve, reject;
+				const promise = new Promise((_resolve, _reject) => {
+					resolve = _resolve;
+					reject = _reject;
+				});
+				return {
+					resolve,
+					reject,
+					promise,
+				};
+			}
+
 			async function runCli(argv, options = {}) {
 				await bootPromise;
 				if (!client) {
 					throw new Error('Playground client is not ready yet.');
 				}
-				const requestHandler = client.__internal_getRequestHandler?.();
-				if (!requestHandler?.processManager) {
-					throw new Error('Unable to access PHP runtime.');
-				}
-				const { php, reap } =
-					await requestHandler.processManager.acquirePHPInstance();
-				let response;
-				try {
-					response = await php.cli(argv, options);
-				} catch (error) {
-					reap();
-					throw error;
-				}
-				response.exitCode.finally(() => {
-					reap();
-				});
+				console.log({ argv, options });
+				await client.writeFile(
+					'/tmp/test.php',
+					'<?php echo "hi!"; flush(); sleep(60); echo "\nnewline"; ?>'
+				);
+				const response = await client.cli(argv, options);
 
+				const abortedPromise = invertPromise();
 				const process = {
 					response,
 					php,
@@ -1045,20 +1049,21 @@ var_dump($html_processor->get_tag());
 							return;
 						}
 						process.aborted = true;
-						try {
-							await response.stdout.cancel();
-						} catch {}
-						try {
-							await response.stderr.cancel();
-						} catch {}
-						try {
-							php.exit(130);
-						} catch {}
+						abortedPromise.resolve();
+
+						// Ignore cancelation errors and also don't
+						// await these promises. The cancel() calls
+						// go to the remote worker which may be busy
+						// for some more time before it's able to
+						// respond to the cancel() call.
+						response.stdout.cancel().catch(() => {});
+						response.stderr.cancel().catch(() => {});
 					},
 				};
 				const callbackSink = (callback) =>
 					new WritableStream({
 						write(chunk) {
+							console.log({ chunk });
 							if (process.aborted) {
 								return;
 							}
@@ -1070,43 +1075,22 @@ var_dump($html_processor->get_tag());
 
 				currentProcess = process;
 
-				const streamStdout = response.stdout
+				response.stdout
 					.pipeThrough(new TextDecoderStream())
-					.pipeTo(callbackSink(writeStdout))
-					.catch((error) => {
-						if (!process.aborted) {
-							throw error;
-						}
-					});
+					.pipeTo(callbackSink(writeStdout));
 
-				const streamStderr = response.stderr
+				response.stderr
 					.pipeThrough(new TextDecoderStream())
-					.pipeTo(callbackSink(writeStderr))
-					.catch((error) => {
-						if (!process.aborted) {
-							throw error;
-						}
-					});
+					.pipeTo(callbackSink(writeStderr));
 
-				const exitCodePromise = response.exitCode.catch((error) => {
-					if (!process.aborted) {
-						throw error;
-					}
-					return 130;
-				});
-
-				const [, , exitCode] = await Promise.all([
-					streamStdout,
-					streamStderr,
-					exitCodePromise,
+				const exitCode = await Promise.race([
+					response.exitCode,
+					abortedPromise.promise.then(() => 130),
 				]);
 
-				const wasAborted = process.aborted;
 				currentProcess = null;
-				if (wasAborted) {
-					term.writeln('\r\nProcess interrupted.');
-				}
-				return { exitCode, aborted: wasAborted };
+
+				return { exitCode, aborted: process.aborted };
 			}
 
 			async function runTerminalCommand(rawInput) {
@@ -1129,6 +1113,14 @@ var_dump($html_processor->get_tag());
 							term.writeln(
 								'\r\nAvailable commands:\r\n  help        Show this message\r\n  php <...>  Run PHP CLI arguments\r\n  wp <...>   Run WP-CLI (auto-downloads if needed)\r\n  composer <...>  Run Composer (auto-downloads if needed)'
 							);
+							break;
+						}
+						case 'ls': {
+							(
+								(await client.listFiles(args[0] || '/')) || []
+							).forEach((line) => {
+								term.writeln(line);
+							});
 							break;
 						}
 						case 'php': {
@@ -1198,6 +1190,8 @@ var_dump($html_processor->get_tag());
 				} finally {
 					isRunningCommand = false;
 				}
+
+				currentProcess = null;
 			}
 
 			term.onData((data) => {
@@ -1310,8 +1304,8 @@ var_dump($html_processor->get_tag());
 
 			async function bootPlayground(phpVersion, wpVersion) {
 				// Point the iframe at the appropriate PHP and WordPress versions using the Query API
-				previewIframe.src = `https://playground.wordpress.net/remote.html`;
-				// previewIframe.src = `http://127.0.0.1:5400/remote.html`;
+				// previewIframe.src = `https://playground.wordpress.net/remote.html`;
+				previewIframe.src = `http://127.0.0.1:5400/remote.html`;
 				client = await startPlaygroundWeb({
 					iframe: previewIframe,
 					remoteUrl: previewIframe.src,

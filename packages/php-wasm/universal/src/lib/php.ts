@@ -616,6 +616,7 @@ export class PHP implements Disposable {
 		const streamedResponsePromise = this.#executeWithErrorHandling(
 			async () => {
 				if (!this.#phpWasmInitCalled) {
+					this.#phpWasmInitCalled = true;
 					await this[__private__dont__use].ccall(
 						'php_wasm_init',
 						null,
@@ -625,7 +626,6 @@ export class PHP implements Disposable {
 							isAsync: true,
 						}
 					);
-					this.#phpWasmInitCalled = true;
 				}
 				if (
 					request.scriptPath &&
@@ -1460,7 +1460,6 @@ export class PHP implements Disposable {
 					[arg]
 				);
 			}
-
 			return this[__private__dont__use].ccall('run_cli', null, [], [], {
 				async: true,
 			});
