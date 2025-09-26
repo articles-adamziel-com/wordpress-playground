@@ -7,6 +7,10 @@
 			content="width=device-width, initial-scale=1.0, user-scalable=yes"
 		/>
 		<title>WordPress PHP Playground</title>
+		<link
+			rel="stylesheet"
+			href="https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.css"
+		/>
 		<style>
 			html,
 			body {
@@ -153,6 +157,22 @@
 				width: 100%;
 				height: 100%;
 				border: 0;
+			}
+
+			#terminalPane {
+				height: 260px;
+				background: #111;
+				border-top: 1px solid #333;
+				color: #fff;
+				font-family: 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono',
+					Consolas, 'Courier New', monospace;
+				padding: 8px;
+				box-sizing: border-box;
+			}
+
+			#terminal {
+				width: 100%;
+				height: calc(100% - 16px);
 			}
 
 			/* Modal styles */
@@ -315,6 +335,9 @@
 				#editor .cm-editor {
 					font-size: 13px;
 				}
+				#terminalPane {
+					height: 220px;
+				}
 			}
 
 			/* Small mobile adjustments */
@@ -342,6 +365,9 @@
 				#editor .cm-editor {
 					font-size: 12px;
 					line-height: 1.3;
+				}
+				#terminalPane {
+					height: 200px;
 				}
 			}
 
@@ -438,6 +464,9 @@
 			<div id="previewPane">
 				<iframe id="preview" title="WordPress Playground"></iframe>
 			</div>
+		</div>
+		<div id="terminalPane">
+			<div id="terminal"></div>
 		</div>
 
 		<!-- Help Modal -->
@@ -708,6 +737,8 @@
 				startPlaygroundWeb,
 				SupportedPHPVersionsList,
 			} from 'https://playground.wordpress.net/client/index.js';
+			import { Terminal } from 'https://cdn.jsdelivr.net/npm/xterm@5.3.0/+esm';
+			import { FitAddon } from 'https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.8.0/+esm';
 
 			const editorEl = document.getElementById('editor');
 			const phpCompartment = new Compartment();
@@ -834,6 +865,428 @@ var_dump($html_processor->get_tag());
 			let bootPromise = Promise.resolve();
 			let runCounter = 0;
 
+			const terminalContainer = document.getElementById('terminal');
+			const term = new Terminal({
+				convertEol: true,
+				fontSize: 14,
+				theme: {
+					background: '#111111',
+					foreground: '#f1f5f9',
+				},
+				cursorBlink: true,
+			});
+			const fitAddon = new FitAddon();
+			term.loadAddon(fitAddon);
+			term.open(terminalContainer);
+			fitAddon.fit();
+
+			function debounce(fn, delay) {
+				let timeoutId = null;
+				return (...args) => {
+					if (timeoutId) {
+						clearTimeout(timeoutId);
+					}
+					timeoutId = setTimeout(() => {
+						fn(...args);
+					}, delay);
+				};
+			}
+
+			window.addEventListener(
+				'resize',
+				debounce(() => fitAddon.fit(), 150)
+			);
+
+			const commandHistory = [];
+			let historyIndex = -1;
+			let currentLine = '';
+			let isRunningCommand = false;
+			let currentProcess = null;
+			const WP_CLI_PATH = '/tmp/wp-cli.phar';
+			const COMPOSER_PATH = '/tmp/composer.phar';
+
+			term.writeln(
+				'WordPress Playground CLI ready. Type `help` to see available commands.'
+			);
+			prompt(false);
+
+			function prompt(newLine = true) {
+				const prefix = newLine ? '\r\n$ ' : '$ ';
+				term.write(prefix);
+			}
+
+			function refreshInputLine() {
+				term.write(`\r\x1b[2K$ ${currentLine}`);
+			}
+
+			function writeStdout(text) {
+				if (!text) {
+					return;
+				}
+				const normalised = text.replace(/\r?\n/g, '\r\n');
+				term.write(normalised);
+			}
+
+			function writeStderr(text) {
+				if (!text) {
+					return;
+				}
+				const normalised = text.replace(/\r?\n/g, '\r\n');
+				term.write(`\u001b[31m${normalised}\u001b[0m`);
+			}
+
+			function splitShellCommand(command) {
+				const MODE_NORMAL = 0;
+				const MODE_IN_QUOTE = 1;
+				let mode = MODE_NORMAL;
+				let quote = '';
+				const parts = [];
+				let currentPart = '';
+				for (let i = 0; i < command.length; i++) {
+					const char = command[i];
+					if (mode === MODE_NORMAL) {
+						if (char === '"' || char === "'") {
+							mode = MODE_IN_QUOTE;
+							quote = char;
+						} else if (/\s/.test(char)) {
+							if (currentPart) {
+								parts.push(currentPart);
+								currentPart = '';
+							}
+						} else {
+							currentPart += char;
+						}
+					} else if (mode === MODE_IN_QUOTE) {
+						if (char === '\\') {
+							i += 1;
+							currentPart += command[i] ?? '';
+						} else if (char === quote) {
+							mode = MODE_NORMAL;
+							quote = '';
+						} else {
+							currentPart += char;
+						}
+					}
+				}
+				if (currentPart) {
+					parts.push(currentPart);
+				}
+				return parts;
+			}
+
+			async function ensureWpCliBinary() {
+				await bootPromise;
+				if (!client) {
+					throw new Error('Playground client is not ready yet.');
+				}
+				if (await client.fileExists(WP_CLI_PATH)) {
+					return;
+				}
+				term.writeln('\r\nDownloading WP-CLI...');
+				const response = await fetch(
+					'https://raw.githubusercontent.com/wp-cli/builds/gh-pages/phar/wp-cli.phar'
+				);
+				if (!response.ok) {
+					throw new Error('Failed to download WP-CLI');
+				}
+				const buffer = await response.arrayBuffer();
+				await client.writeFile(WP_CLI_PATH, new Uint8Array(buffer));
+				term.writeln('Download complete.');
+			}
+
+			async function ensureComposerBinary() {
+				await bootPromise;
+				if (!client) {
+					throw new Error('Playground client is not ready yet.');
+				}
+				if (await client.fileExists(COMPOSER_PATH)) {
+					return;
+				}
+				term.writeln('\r\nDownloading Composer...');
+				const response = await fetch(
+					'https://wordpress-playground-cors-proxy.net/?https://getcomposer.org/composer-stable.phar'
+				);
+				if (!response.ok) {
+					throw new Error('Failed to download Composer');
+				}
+				const buffer = await response.arrayBuffer();
+				await client.writeFile(COMPOSER_PATH, new Uint8Array(buffer));
+				term.writeln('Download complete.');
+			}
+
+			async function runCli(argv, options = {}) {
+				await bootPromise;
+				if (!client) {
+					throw new Error('Playground client is not ready yet.');
+				}
+				const requestHandler = client.__internal_getRequestHandler?.();
+				if (!requestHandler?.processManager) {
+					throw new Error('Unable to access PHP runtime.');
+				}
+				const { php, reap } =
+					await requestHandler.processManager.acquirePHPInstance();
+				let response;
+				try {
+					response = await php.cli(argv, options);
+				} catch (error) {
+					reap();
+					throw error;
+				}
+				response.exitCode.finally(() => {
+					reap();
+				});
+
+				const process = {
+					response,
+					php,
+					aborted: false,
+					async terminate() {
+						if (process.aborted) {
+							return;
+						}
+						process.aborted = true;
+						try {
+							await response.stdout.cancel();
+						} catch {}
+						try {
+							await response.stderr.cancel();
+						} catch {}
+						try {
+							php.exit(130);
+						} catch {}
+					},
+				};
+				const callbackSink = (callback) =>
+					new WritableStream({
+						write(chunk) {
+							if (process.aborted) {
+								return;
+							}
+							if (chunk) {
+								callback(chunk);
+							}
+						},
+					});
+
+				currentProcess = process;
+
+				const streamStdout = response.stdout
+					.pipeThrough(new TextDecoderStream())
+					.pipeTo(callbackSink(writeStdout))
+					.catch((error) => {
+						if (!process.aborted) {
+							throw error;
+						}
+					});
+
+				const streamStderr = response.stderr
+					.pipeThrough(new TextDecoderStream())
+					.pipeTo(callbackSink(writeStderr))
+					.catch((error) => {
+						if (!process.aborted) {
+							throw error;
+						}
+					});
+
+				const exitCodePromise = response.exitCode.catch((error) => {
+					if (!process.aborted) {
+						throw error;
+					}
+					return 130;
+				});
+
+				const [, , exitCode] = await Promise.all([
+					streamStdout,
+					streamStderr,
+					exitCodePromise,
+				]);
+
+				const wasAborted = process.aborted;
+				currentProcess = null;
+				if (wasAborted) {
+					term.writeln('\r\nProcess interrupted.');
+				}
+				return { exitCode, aborted: wasAborted };
+			}
+
+			async function runTerminalCommand(rawInput) {
+				const trimmed = rawInput.trim();
+				if (!trimmed) {
+					isRunningCommand = false;
+					prompt();
+					return;
+				}
+				const parts = splitShellCommand(trimmed);
+				if (parts.length === 0) {
+					isRunningCommand = false;
+					prompt();
+					return;
+				}
+				const [command, ...args] = parts;
+				try {
+					switch (command) {
+						case 'help': {
+							term.writeln(
+								'\r\nAvailable commands:\r\n  help        Show this message\r\n  php <...>  Run PHP CLI arguments\r\n  wp <...>   Run WP-CLI (auto-downloads if needed)\r\n  composer <...>  Run Composer (auto-downloads if needed)'
+							);
+							break;
+						}
+						case 'php': {
+							if (!args.length) {
+								term.writeln('\r\nUsage: php <arguments>');
+								break;
+							}
+							const result = await runCli(['php', ...args]);
+							if (!result.aborted && result.exitCode !== 0) {
+								term.writeln(
+									`\r\nProcess exited with code ${result.exitCode}`
+								);
+							}
+							break;
+						}
+						case 'wp': {
+							await ensureWpCliBinary();
+							const result = await runCli([
+								'php',
+								WP_CLI_PATH,
+								'--path=/wordpress',
+								...args,
+							]);
+							if (!result.aborted && result.exitCode !== 0) {
+								term.writeln(
+									`\r\nProcess exited with code ${result.exitCode}`
+								);
+							}
+							break;
+						}
+						case 'composer': {
+							await ensureComposerBinary();
+							const result = await runCli([
+								'php',
+								COMPOSER_PATH,
+								...args,
+							]);
+							if (!result.aborted && result.exitCode !== 0) {
+								term.writeln(
+									`\r\nProcess exited with code ${result.exitCode}`
+								);
+							}
+							break;
+						}
+						default:
+							term.writeln(`\r\n${command}: command not found`);
+					}
+				} catch (error) {
+					const message = error?.message || String(error);
+					term.writeln(`\r\nError: ${message}`);
+				} finally {
+					isRunningCommand = false;
+					if (!currentProcess) {
+						prompt();
+					}
+				}
+			}
+
+			async function abortActiveProcess() {
+				if (!currentProcess) {
+					isRunningCommand = false;
+					prompt();
+					return;
+				}
+				try {
+					await currentProcess.terminate();
+				} finally {
+					isRunningCommand = false;
+				}
+			}
+
+			term.onData((data) => {
+				if (data === '\u0003') {
+					term.write('^C');
+					void abortActiveProcess();
+					currentLine = '';
+					return;
+				}
+				if (isRunningCommand) {
+					return;
+				}
+				switch (data) {
+					case '\r': {
+						term.write('\r\n');
+						const submitted = currentLine;
+						if (submitted.trim()) {
+							commandHistory.unshift(submitted);
+						}
+						historyIndex = -1;
+						currentLine = '';
+						isRunningCommand = true;
+						void runTerminalCommand(submitted);
+						break;
+					}
+					case '\u007F': {
+						if (currentLine.length > 0) {
+							currentLine = currentLine.slice(0, -1);
+							term.write('\b \b');
+						}
+						break;
+					}
+					default: {
+						if ((data >= ' ' && data <= '~') || data >= '\u00a0') {
+							currentLine += data;
+							term.write(data);
+						}
+						break;
+					}
+				}
+			});
+
+			term.attachCustomKeyEventHandler((event) => {
+				if (event.type !== 'keydown') {
+					return true;
+				}
+				if ((event.metaKey || event.ctrlKey) && event.code === 'KeyV') {
+					navigator.clipboard
+						.readText()
+						.then((text) => {
+							if (!isRunningCommand && text) {
+								currentLine += text;
+								refreshInputLine();
+							}
+						})
+						.catch(() => {});
+					return false;
+				}
+				if (event.metaKey || event.ctrlKey) {
+					return true;
+				}
+				if (event.code === 'ArrowUp') {
+					event.preventDefault();
+					if (commandHistory.length === 0) {
+						return false;
+					}
+					const nextIndex = historyIndex + 1;
+					if (nextIndex < commandHistory.length) {
+						historyIndex = nextIndex;
+						currentLine = commandHistory[historyIndex];
+						refreshInputLine();
+					}
+					return false;
+				}
+				if (event.code === 'ArrowDown') {
+					event.preventDefault();
+					if (historyIndex > 0) {
+						historyIndex -= 1;
+						currentLine = commandHistory[historyIndex];
+					} else {
+						historyIndex = -1;
+						currentLine = '';
+					}
+					refreshInputLine();
+					return false;
+				}
+				return true;
+			});
+
 			// Detect platform for keyboard shortcut display
 			const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
 			const shortcutText = isMac ? 'Cmd+S' : 'Ctrl+S';
@@ -858,6 +1311,7 @@ var_dump($html_processor->get_tag());
 			async function bootPlayground(phpVersion, wpVersion) {
 				// Point the iframe at the appropriate PHP and WordPress versions using the Query API
 				previewIframe.src = `https://playground.wordpress.net/remote.html`;
+				// previewIframe.src = `http://127.0.0.1:5400/remote.html`;
 				client = await startPlaygroundWeb({
 					iframe: previewIframe,
 					remoteUrl: previewIframe.src,
