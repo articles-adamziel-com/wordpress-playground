@@ -398,6 +398,10 @@ export class PHP implements Disposable {
 		this[__private__dont__use].FS.chdir(path);
 	}
 
+	cwd() {
+		return this[__private__dont__use].FS.cwd();
+	}
+
 	/**
 	 * Changes the permissions of a file or directory.
 	 * @param path - The path to the file or directory.

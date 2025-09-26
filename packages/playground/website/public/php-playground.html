@@ -1151,7 +1151,9 @@ var_dump($html_processor->get_tag());
 						}
 						default: {
 							if (!args.length) {
-								term.writeln('\r\nUsage: php <arguments>');
+								term.writeln(
+									`\r\nUsage: ${command} <arguments>`
+								);
 								break;
 							}
 							const result = await runCli(parts);

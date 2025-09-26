@@ -65,7 +65,11 @@ export function sandboxedSpawnHandlerFactory(
 		});
 
 		try {
-			php.chdir((options.cwd as string) ?? '/');
+			if ('cwd' in options) {
+				php.chdir((options.cwd as string) ?? '/');
+			}
+
+			const cwd = php.cwd();
 
 			if (binaryName === 'php') {
 				// Figure out more about setting env, putenv(), etc.
@@ -96,7 +100,7 @@ export function sandboxedSpawnHandlerFactory(
 				);
 				processApi.exit(await result.exitCode);
 			} else if (binaryName === 'ls') {
-				const files = php.listFiles(args[1] || '/');
+				const files = php.listFiles(args[1] ?? cwd);
 				files.forEach((file) => {
 					processApi.stdout(file + '\n');
 				});
