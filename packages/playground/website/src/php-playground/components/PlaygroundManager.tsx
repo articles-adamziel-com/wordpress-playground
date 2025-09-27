@@ -1,7 +1,5 @@
 import { useEffect, useRef } from 'react';
-
 import { startPlaygroundWeb } from '@wp-playground/client';
-
 import { DEFAULT_WP_REMOTE } from '../constants';
 import { useAppDispatch, useAppSelector } from '../hooks';
 import {
@@ -52,10 +50,7 @@ export const PlaygroundManager = () => {
 		clientRef.current = client;
 	}, [client]);
 
-	useEffect(() => {
-		if (initialized) {
-			return;
-		}
+	function refreshStateFromUrl() {
 		const state = loadStateFromURL();
 		dispatch(
 			applyUrlState({
@@ -64,19 +59,16 @@ export const PlaygroundManager = () => {
 				wpVersion: state.wpVersion,
 			})
 		);
+	}
+
+	useEffect(() => {
+		if (!initialized) {
+			refreshStateFromUrl();
+		}
 	}, [dispatch, initialized]);
 
 	useEffect(() => {
-		const handleHashChange = () => {
-			const state = loadStateFromURL();
-			dispatch(
-				applyUrlState({
-					code: state.code,
-					phpVersion: state.phpVersion,
-					wpVersion: state.wpVersion,
-				})
-			);
-		};
+		const handleHashChange = () => refreshStateFromUrl();
 		window.addEventListener('hashchange', handleHashChange);
 		return () => {
 			window.removeEventListener('hashchange', handleHashChange);
@@ -119,30 +111,26 @@ export const PlaygroundManager = () => {
 			dispatch(setWpVersionsLoading(true));
 			runCountRef.current = 0;
 
-			previewIframe.src = DEFAULT_WP_REMOTE;
-
 			try {
+				console.log('Initializing');
 				const clientInstance = await startPlaygroundWeb({
 					iframe: previewIframe,
-					remoteUrl: previewIframe.src,
-					blueprint: {
-						preferredVersions: {
-							wp: wpVersionRef.current,
-							php: phpVersionRef.current,
-						},
-					},
+					remoteUrl: DEFAULT_WP_REMOTE,
+					// blueprint: {
+					// 	preferredVersions: {
+					// 		wp: wpVersionRef.current,
+					// 		php: phpVersionRef.current as any,
+					// 	},
+					// },
 				});
+				console.log('Client initialized');
 
 				if (cancelled) {
 					try {
-						if (
-							'destroy' in clientInstance &&
-							typeof (clientInstance as any).destroy ===
-								'function'
-						) {
-							await (clientInstance as any).destroy();
-						}
-					} catch {}
+						await (clientInstance as any).destroy();
+					} catch {
+						/** Ignore errors */
+					}
 					return;
 				}
 
@@ -162,31 +150,29 @@ export const PlaygroundManager = () => {
 					dispatch(setWpVersionsLoading(false));
 				}
 
-				await clientInstance.isReady;
+				await clientInstance.isReady();
 				if (cancelled) {
 					try {
-						if (
-							'destroy' in clientInstance &&
-							typeof (clientInstance as any).destroy ===
-								'function'
-						) {
-							await (clientInstance as any).destroy();
-						}
-					} catch {}
+						await (clientInstance as any).destroy();
+					} catch {
+						// Ignore errors
+					}
 					return;
 				}
 
+				await clientInstance.mkdir('/wordpress/workspace');
 				await clientInstance.writeFile(
-					'/wordpress/code.php',
+					'/wordpress/workspace/code.php',
 					codeRef.current
 				);
-				await clientInstance.goTo('/code.php');
+				await clientInstance.goTo('/workspace/code.php');
 
 				clientRef.current = clientInstance;
 				dispatch(setClient(clientInstance));
 				playgroundRuntime.setClient(clientInstance);
 				dispatch(setBootStatus('ready'));
 			} catch (error: any) {
+				console.log({ error });
 				const message = error?.message ?? String(error);
 				dispatch(setBootStatus('error'));
 				dispatch(setBootError(message));

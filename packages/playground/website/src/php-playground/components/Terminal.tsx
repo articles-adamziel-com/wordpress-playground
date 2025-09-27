@@ -1,6 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
-import type { PointerEvent as ReactPointerEvent } from 'react';
-import clsx from 'clsx';
+import { useEffect, useRef } from 'react';
 import { splitShellCommand } from '@php-wasm/util';
 import { Terminal as XTerm } from 'xterm';
 import { FitAddon } from 'xterm-addon-fit';
@@ -9,9 +7,6 @@ import { playgroundRuntime } from '../runtime';
 import styles from './layout.module.css';
 import 'xterm/css/xterm.css';
 
-const MIN_TERMINAL_HEIGHT = 140;
-const MAX_TERMINAL_HEIGHT = 600;
-const DEFAULT_TERMINAL_HEIGHT = 220;
 const PROGRESS_BAR_WIDTH = 28;
 const SPINNER_FRAMES = ['-', '\\', '|', '/'];
 
@@ -23,8 +18,9 @@ interface DownloadProgress {
 	lastRenderedLength: number;
 }
 
-const clampHeight = (value: number) =>
-	Math.min(MAX_TERMINAL_HEIGHT, Math.max(MIN_TERMINAL_HEIGHT, value));
+interface TerminalProps {
+	isCollapsed: boolean;
+}
 
 const formatBytes = (bytes: number) => {
 	if (bytes < 1024) {
@@ -64,143 +60,10 @@ const drawProgress = (term: XTerm, progress: DownloadProgress) => {
 	progress.lastRenderedLength = padLength;
 };
 
-export const Terminal = () => {
+export const Terminal = ({ isCollapsed }: TerminalProps) => {
 	const terminalContainerRef = useRef<HTMLDivElement | null>(null);
 	const fitAddonRef = useRef<FitAddon | null>(null);
 	const progressRef = useRef<DownloadProgress | null>(null);
-
-	const [height, setHeight] = useState(DEFAULT_TERMINAL_HEIGHT);
-	const [isCollapsed, setCollapsed] = useState(false);
-	const [isDragging, setDragging] = useState(false);
-
-	const lastExpandedHeightRef = useRef(DEFAULT_TERMINAL_HEIGHT);
-	const isCollapsedRef = useRef(isCollapsed);
-	const isDraggingRef = useRef(false);
-	const dragContextRef = useRef({
-		pointerId: -1,
-		startY: 0,
-		startHeight: DEFAULT_TERMINAL_HEIGHT,
-	});
-
-	useEffect(() => {
-		isCollapsedRef.current = isCollapsed;
-	}, [isCollapsed]);
-
-	useEffect(() => {
-		if (!isCollapsed) {
-			lastExpandedHeightRef.current = height;
-		}
-	}, [height, isCollapsed]);
-
-	useEffect(() => {
-		if (!isDragging) {
-			return;
-		}
-		const previousUserSelect = document.body.style.userSelect;
-		document.body.style.userSelect = 'none';
-		return () => {
-			document.body.style.userSelect = previousUserSelect;
-		};
-	}, [isDragging]);
-
-	const applyHeight = useCallback((value: number) => {
-		setHeight(clampHeight(value));
-	}, []);
-
-	const handlePointerDown = useCallback(
-		(event: ReactPointerEvent<HTMLDivElement>) => {
-			event.preventDefault();
-
-			let baseHeight = height;
-			if (isCollapsedRef.current) {
-				const restored = clampHeight(
-					lastExpandedHeightRef.current || DEFAULT_TERMINAL_HEIGHT
-				);
-				baseHeight = restored;
-				setCollapsed(false);
-				setHeight(restored);
-			}
-
-			dragContextRef.current = {
-				pointerId: event.pointerId,
-				startY: event.clientY,
-				startHeight: baseHeight,
-			};
-			isDraggingRef.current = true;
-			setDragging(true);
-			event.currentTarget.setPointerCapture?.(event.pointerId);
-		},
-		[height]
-	);
-
-	const handlePointerMove = useCallback(
-		(event: ReactPointerEvent<HTMLDivElement>) => {
-			if (
-				!isDraggingRef.current ||
-				dragContextRef.current.pointerId !== event.pointerId
-			) {
-				return;
-			}
-			const delta = dragContextRef.current.startY - event.clientY;
-			applyHeight(dragContextRef.current.startHeight + delta);
-		},
-		[applyHeight]
-	);
-
-	const endResize = useCallback(
-		(event: ReactPointerEvent<HTMLDivElement>) => {
-			if (dragContextRef.current.pointerId !== event.pointerId) {
-				return;
-			}
-			event.currentTarget.releasePointerCapture?.(event.pointerId);
-			isDraggingRef.current = false;
-			setDragging(false);
-			fitAddonRef.current?.fit();
-		},
-		[]
-	);
-
-	const toggleCollapse = useCallback(() => {
-		setCollapsed((prev) => {
-			if (prev) {
-				const restored = clampHeight(
-					lastExpandedHeightRef.current || DEFAULT_TERMINAL_HEIGHT
-				);
-				setHeight(restored);
-				return false;
-			}
-			lastExpandedHeightRef.current = height;
-			return true;
-		});
-	}, [height]);
-
-	useEffect(() => {
-		if (isCollapsed) {
-			return;
-		}
-		const fitAddon = fitAddonRef.current;
-		if (!fitAddon) {
-			return;
-		}
-		const frame = requestAnimationFrame(() => {
-			try {
-				fitAddon.fit();
-			} catch {}
-		});
-		return () => cancelAnimationFrame(frame);
-	}, [height, isCollapsed]);
-
-	useEffect(() => {
-		const handleResize = () => {
-			if (!isCollapsedRef.current) {
-				try {
-					fitAddonRef.current?.fit();
-				} catch {}
-			}
-		};
-		window.addEventListener('resize', handleResize);
-		return () => window.removeEventListener('resize', handleResize);
-	}, []);
 
 	useEffect(() => {
 		const container = terminalContainerRef.current;
@@ -224,7 +87,9 @@ export const Terminal = () => {
 		requestAnimationFrame(() => {
 			try {
 				fitAddon.fit();
-			} catch {}
+			} catch {
+				/* ignore errors */
+			}
 		});
 
 		const startDownloadProgress = (label: string, totalBytes: number) => {
@@ -367,18 +232,6 @@ export const Terminal = () => {
 			return client as any;
 		};
 
-		const ensureTerminalExpanded = () => {
-			if (!isCollapsedRef.current) {
-				return;
-			}
-			const targetHeight = clampHeight(
-				lastExpandedHeightRef.current || DEFAULT_TERMINAL_HEIGHT
-			);
-			lastExpandedHeightRef.current = targetHeight;
-			setCollapsed(false);
-			setHeight(targetHeight);
-		};
-
 		const ensureWpCliBinary = async () => {
 			const client = await ensureBootReady();
 			const path = '/tmp/wp-cli.phar';
@@ -436,7 +289,6 @@ require_once __FILE__ . '.bin';
 				const stdoutDecoder = new TextDecoder();
 				const stderrDecoder = new TextDecoder();
 				let aborted = false;
-
 				const activeProcess = {
 					async terminate() {
 						if (aborted) {
@@ -445,13 +297,19 @@ require_once __FILE__ . '.bin';
 						aborted = true;
 						try {
 							await stdoutReader.cancel();
-						} catch {}
+						} catch {
+							/* ignore errors */
+						}
 						try {
 							await stderrReader.cancel();
-						} catch {}
+						} catch {
+							/* ignore errors */
+						}
 						try {
 							php.exit(130);
-						} catch {}
+						} catch {
+							/* ignore errors */
+						}
 					},
 				};
 				currentProcess = activeProcess;
@@ -519,15 +377,9 @@ require_once __FILE__ . '.bin';
 					exitCodePromise,
 				]);
 
-				const result = {
-					exitCode,
-					aborted,
-				};
+				return { exitCode, aborted };
+			} finally {
 				currentProcess = null;
-				return result;
-			} catch (error) {
-				currentProcess = null;
-				throw error;
 			}
 		};
 
@@ -551,8 +403,6 @@ require_once __FILE__ . '.bin';
 				prompt();
 				return;
 			}
-
-			ensureTerminalExpanded();
 
 			const [command, ...args] = parts;
 			try {
@@ -718,53 +568,59 @@ require_once __FILE__ . '.bin';
 		};
 	}, []);
 
-	const sectionClassName = clsx(styles.terminalSection, {
-		[styles.terminalSectionCollapsed]: isCollapsed,
-	});
+	useEffect(() => {
+		if (isCollapsed) {
+			return;
+		}
+		const frame = requestAnimationFrame(() => {
+			try {
+				fitAddonRef.current?.fit();
+			} catch {
+				/* ignore errors */
+			}
+		});
+		return () => cancelAnimationFrame(frame);
+	}, [isCollapsed]);
 
-	const handleClassName = clsx(styles.terminalResizeHandle, {
-		[styles.terminalResizeHandleDragging]: isDragging,
-	});
+	useEffect(() => {
+		const handleResize = () => {
+			if (!isCollapsed) {
+				try {
+					fitAddonRef.current?.fit();
+				} catch {
+					/* ignore errors */
+				}
+			}
+		};
+		window.addEventListener('resize', handleResize);
+		return () => window.removeEventListener('resize', handleResize);
+	}, [isCollapsed]);
 
-	const paneStyle = isCollapsed
-		? { height: 0, padding: 0 }
-		: { height, padding: 8 };
+	useEffect(() => {
+		const container = terminalContainerRef.current;
+		if (!container || typeof ResizeObserver === 'undefined') {
+			return;
+		}
+		const observer = new ResizeObserver(() => {
+			if (isCollapsed) {
+				return;
+			}
+			try {
+				fitAddonRef.current?.fit();
+			} catch {
+				/* ignore errors */
+			}
+		});
+		observer.observe(container);
+		return () => observer.disconnect();
+	}, [isCollapsed]);
 
 	return (
-		<section
-			id="terminalSection"
-			className={sectionClassName}
-			aria-label="Playground terminal"
-		>
-			<div
-				id="terminalResizeHandle"
-				className={handleClassName}
-				role="separator"
-				aria-orientation="horizontal"
-				aria-label="Resize terminal"
-				onPointerDown={handlePointerDown}
-				onPointerMove={handlePointerMove}
-				onPointerUp={endResize}
-				onPointerCancel={endResize}
-			/>
-			<header
-				className={styles.terminalHeader}
-				onClick={toggleCollapse}
-				aria-expanded={!isCollapsed}
-			>
-				Terminal
-			</header>
-			<div
-				id="terminalPane"
-				className={styles.terminalPane}
-				style={paneStyle}
-			>
-				<div
-					ref={terminalContainerRef}
-					id="terminal"
-					className={styles.terminal}
-				/>
-			</div>
-		</section>
+		<div
+			ref={terminalContainerRef}
+			id="terminal"
+			className={styles.terminal}
+			aria-live="polite"
+		/>
 	);
 };

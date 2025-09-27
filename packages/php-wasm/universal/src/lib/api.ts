@@ -374,11 +374,12 @@ function streamToPort(stream: ReadableStream<Uint8Array>): MessagePort {
 			}
 		} catch (e: any) {
 			try {
-				// @TODO: Find a way to transfer the error object, including any stack trace etc.,
-				//        using the error transfer handlers.
+				const serialized = serializeForPort(e);
 				port1.postMessage({
 					t: 'error',
-					m: e?.message || JSON.stringify(e),
+					e: serialized,
+					// Legacy field for backwards compatibility
+					m: (e as any)?.message || JSON.stringify(e),
 				});
 			} catch {
 				// Ignore error
@@ -413,6 +414,25 @@ function portToStream(port: MessagePort): ReadableStream<Uint8Array> {
 						cleanup();
 						break;
 					case 'error': {
+						if (data.e) {
+							let errorValue: unknown;
+							try {
+								errorValue = deserializeForPort(
+									data.e,
+									'MessagePort bridged stream error'
+								);
+							} catch (deserializationError: any) {
+								// Fallback: if deserialization fails, surface a generic error
+								errorValue = new Error(
+									deserializationError?.message ||
+										'Stream error'
+								);
+							}
+							controller.error(errorValue as any);
+							cleanup();
+							break;
+						}
+						// Legacy fallback using stringified message
 						let error = '';
 						try {
 							error = JSON.parse(data.m);
@@ -492,8 +512,11 @@ function promiseToPort(promise: Promise<any>): MessagePort {
 		})
 		.catch((err) => {
 			try {
+				const serialized = serializeForPort(err);
 				port1.postMessage({
 					t: 'reject',
+					e: serialized,
+					// Legacy field for backwards compatibility
 					m: (err as any)?.message || JSON.stringify(err),
 				});
 			} catch {
@@ -523,9 +546,25 @@ function portToPromise(port: MessagePort): Promise<any> {
 				cleanup();
 				resolve(data.v);
 			} else if (data.t === 'reject') {
-				// @TODO: Find a way to transfer the error object, including any stack trace etc.,
-				//        using the error transfer handlers.
 				cleanup();
+				if (data.e) {
+					try {
+						const errorValue = deserializeForPort(
+							data.e,
+							'MessagePort bridged promise rejected'
+						);
+						reject(errorValue as any);
+					} catch (deserializationError: any) {
+						reject(
+							new Error(
+								deserializationError?.message ||
+									'Promise rejected'
+							)
+						);
+					}
+					return;
+				}
+				// Legacy fallback using stringified message
 				let error = '';
 				try {
 					error = JSON.parse(data.m);
@@ -629,6 +668,42 @@ const throwTransferHandlerCustom: Comlink.TransferHandler<
 };
 
 Comlink.transferHandlers.set('throw', throwTransferHandlerCustom);
+
+// Utilities to serialize/deserialize thrown values over MessagePorts
+function serializeForPort(value: unknown): SerializedError {
+	let serialized: SerializedError;
+	if (value instanceof Error) {
+		serialized = {
+			isError: true,
+			value: ErrorSerializer.serializeError(value),
+		};
+		// Preserve the original error class name
+		(serialized.value as any)['originalErrorClassName'] = (
+			value as Error
+		).constructor.name;
+	} else {
+		serialized = { isError: false, value };
+	}
+	return serialized;
+}
+
+function deserializeForPort(
+	serialized: SerializedError,
+	additionalMessage: string
+): unknown {
+	if (serialized.isError) {
+		const error = ErrorSerializer.deserializeError(serialized.value);
+		// Chain host call stack at the bottom of the error chain
+		const additionalCallStack = new Error(additionalMessage);
+		let deepestError: any = error as any;
+		while (deepestError.cause) {
+			deepestError = deepestError.cause;
+		}
+		deepestError.cause = additionalCallStack;
+		return error;
+	}
+	return serialized.value;
+}
 
 function proxyClone(object: any): any {
 	return new Proxy(object, {

@@ -27,10 +27,11 @@
 }
 
 .editorPane {
-	flex: 1;
 	display: flex;
 	flex-direction: column;
 	min-width: 280px;
+	min-height: 0;
+	height: 100%;
 }
 
 .controls {
@@ -100,6 +101,13 @@
 	min-height: 0;
 }
 
+.editorSplitGroup {
+	flex: 1;
+	display: flex;
+	flex-direction: column;
+	min-height: 0;
+}
+
 .editor {
 	flex: 1;
 	min-height: 0;
@@ -163,6 +171,7 @@
 	flex: 1;
 	position: relative;
 	min-width: 320px;
+	height: 100%;
 }
 
 .preview {
@@ -171,6 +180,36 @@
 	width: 100%;
 	height: 100%;
 	border: 0;
+}
+
+.horizontalHandle {
+	width: 8px;
+	background: #e5e5e5;
+	cursor: col-resize;
+	flex-shrink: 0;
+}
+
+.horizontalHandle[data-resize-handle-active='true'],
+.horizontalHandle[data-panel-resize-handle-active='true'] {
+	background: #c7c7c7;
+}
+
+.verticalHandle {
+	height: 8px;
+	background: #202020;
+	cursor: ns-resize;
+	flex-shrink: 0;
+}
+
+.verticalHandle[data-resize-handle-active='true'],
+.verticalHandle[data-panel-resize-handle-active='true'] {
+	background: #2f2f2f;
+}
+
+.terminalPanel {
+	display: flex;
+	flex-direction: column;
+	min-height: 0;
 }
 
 .terminalSection {
@@ -215,7 +254,8 @@
 .terminalPane {
 	box-sizing: border-box;
 	overflow: hidden;
-	transition: height 0.1s ease;
+	padding: 8px;
+	flex: 1;
 }
 
 .terminal {

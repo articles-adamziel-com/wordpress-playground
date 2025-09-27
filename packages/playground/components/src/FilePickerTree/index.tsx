@@ -24,16 +24,18 @@ export type FilePickerControlProps = {
 	onSelect?: (path: string) => void;
 	isLoading?: boolean;
 	error?: string;
+	onExpand?: (path: string) => void | Promise<void>;
 };
 
 type ExpandedNodePaths = Record<string, boolean>;
 
-const FilePickerTree: React.FC<FilePickerControlProps> = ({
+export const FilePickerTree: React.FC<FilePickerControlProps> = ({
 	isLoading = false,
 	error = undefined,
 	files,
 	initialPath,
 	onSelect = () => {},
+	onExpand,
 }) => {
 	const [expanded, setExpanded] = useState<ExpandedNodePaths>(() => {
 		if (!initialPath) {
@@ -56,6 +58,21 @@ const FilePickerTree: React.FC<FilePickerControlProps> = ({
 			...prevState,
 			[path]: isOpen,
 		}));
+		if (isOpen && onExpand) {
+			try {
+				const maybePromise = onExpand(path);
+				if (
+					maybePromise &&
+					typeof (maybePromise as any).then === 'function'
+				) {
+					(maybePromise as Promise<void>).catch(() => {
+						// ignore expansion loading error
+					});
+				}
+			} catch {
+				// ignore expansion errors
+			}
+		}
 	};
 
 	const selectPath = (path: string) => {
@@ -177,7 +194,7 @@ const FilePickerTree: React.FC<FilePickerControlProps> = ({
 	);
 };
 
-const NodeRow: React.FC<{
+export const NodeRow: React.FC<{
 	node: FileNode;
 	level: number;
 	position: number;
@@ -299,7 +316,7 @@ const NodeRow: React.FC<{
 	);
 };
 
-const FileName: React.FC<{
+export const FileName: React.FC<{
 	node: FileNode;
 	level: number;
 	isOpen?: boolean;
@@ -324,5 +341,3 @@ const FileName: React.FC<{
 		</>
 	);
 };
-
-export default FilePickerTree;
