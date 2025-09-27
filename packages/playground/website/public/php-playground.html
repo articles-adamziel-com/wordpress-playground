@@ -93,9 +93,17 @@
 				text-decoration: underline;
 			}
 
+			#editorContent {
+				flex: 1;
+				display: flex;
+				flex-direction: column;
+				min-height: 0;
+			}
+
 			#editor {
 				flex: 1;
 				font-size: 14px;
+				min-height: 0;
 			}
 
 			/* CodeMirror font size */
@@ -159,20 +167,120 @@
 				border: 0;
 			}
 
-			#terminalPane {
-				height: 260px;
+			.terminal-section {
 				background: #111;
-				border-top: 1px solid #333;
 				color: #fff;
 				font-family: 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono',
 					Consolas, 'Courier New', monospace;
+				display: flex;
+				flex-direction: column;
+				border-top: 1px solid #333;
+			}
+
+			.terminal-section.collapsed .terminal-resize-handle,
+			.terminal-section.collapsed #terminalPane {
+				display: none;
+			}
+
+			.terminal-header {
+				display: flex;
+				align-items: center;
+				justify-content: space-between;
+				padding: 6px 12px;
+				background: #1a1a1a;
+				gap: 12px;
+			}
+
+			.terminal-toggle {
+				background: none;
+				border: 0;
+				color: inherit;
+				cursor: pointer;
+				font: inherit;
+				padding: 0;
+				display: flex;
+				align-items: center;
+				gap: 6px;
+			}
+
+			.terminal-toggle:hover {
+				opacity: 0.8;
+			}
+
+			.terminal-section.collapsed .terminal-toggle::after {
+				content: ' ▸';
+			}
+
+			.terminal-section:not(.collapsed) .terminal-toggle::after {
+				content: ' ▾';
+			}
+
+			.terminal-progress {
+				display: flex;
+				align-items: center;
+				gap: 8px;
+			}
+
+			.terminal-progress-label {
+				font-size: 13px;
+				color: #cbd5f5;
+			}
+
+			.terminal-progress-track {
+				width: 140px;
+				height: 6px;
+				background: #2a2a2a;
+				border-radius: 999px;
+				overflow: hidden;
+			}
+
+			.terminal-progress-bar {
+				height: 100%;
+				width: 0;
+				background: linear-gradient(90deg, #22d3ee, #4ade80);
+				transition: width 0.1s ease;
+			}
+
+			.terminal-progress-bar.is-indeterminate {
+				width: 35%;
+				animation: terminalProgressIndeterminate 1.2s ease-in-out
+					infinite;
+			}
+
+			@keyframes terminalProgressIndeterminate {
+				0% {
+					transform: translateX(-100%);
+				}
+				50% {
+					transform: translateX(50%);
+				}
+				100% {
+					transform: translateX(200%);
+				}
+			}
+
+			.terminal-resize-handle {
+				height: 6px;
+				cursor: ns-resize;
+				background: #202020;
+				touch-action: none;
+			}
+
+			.terminal-resize-handle:hover,
+			.terminal-resize-handle.is-dragging {
+				background: #2f2f2f;
+			}
+
+			#terminalPane {
+				height: 220px;
 				padding: 8px;
 				box-sizing: border-box;
+				background: #111;
 			}
 
 			#terminal {
 				width: 100%;
-				height: calc(100% - 16px);
+				height: 100%;
 			}
 
 			/* Modal styles */
@@ -336,7 +444,7 @@
 					font-size: 13px;
 				}
 				#terminalPane {
-					height: 220px;
+					height: 200px;
 				}
 			}
 
@@ -367,7 +475,7 @@
 					line-height: 1.3;
 				}
 				#terminalPane {
-					height: 200px;
+					height: 160px;
 				}
 			}
 
@@ -459,14 +567,55 @@
 						<a href="#" id="helpBtn">How does this work?</a>
 					</div>
 				</div>
-				<div id="editor"></div>
+				<div id="editorContent">
+					<div id="editor"></div>
+					<section
+						id="terminalSection"
+						class="terminal-section"
+						aria-label="Playground terminal"
+					>
+						<header id="terminalHeader" class="terminal-header">
+							<button
+								id="terminalToggle"
+								type="button"
+								aria-expanded="true"
+								class="terminal-toggle"
+							>
+								Terminal
+							</button>
+							<div
+								id="terminalProgress"
+								class="terminal-progress"
+								hidden
+							>
+								<span
+									id="terminalProgressLabel"
+									class="terminal-progress-label"
+								></span>
+								<div class="terminal-progress-track">
+									<div
+										id="terminalProgressBar"
+										class="terminal-progress-bar"
+									></div>
+								</div>
+							</div>
+						</header>
+						<div
+							id="terminalResizeHandle"
+							class="terminal-resize-handle"
+							role="separator"
+							aria-orientation="horizontal"
+							aria-label="Resize terminal"
+						></div>
+						<div id="terminalPane">
+							<div id="terminal"></div>
+						</div>
+					</section>
+				</div>
 			</div>
 			<div id="previewPane">
 				<iframe id="preview" title="WordPress Playground"></iframe>
 			</div>
-		</div>
-		<div id="terminalPane">
-			<div id="terminal"></div>
 		</div>
 
 		<!-- Help Modal -->
@@ -865,6 +1014,20 @@ var_dump($html_processor->get_tag());
 			let bootPromise = Promise.resolve();
 			let runCounter = 0;
 
+			const terminalSection = document.getElementById('terminalSection');
+			const terminalPane = document.getElementById('terminalPane');
+			const terminalToggle = document.getElementById('terminalToggle');
+			const terminalResizeHandle = document.getElementById(
+				'terminalResizeHandle'
+			);
+			const terminalProgressRow =
+				document.getElementById('terminalProgress');
+			const terminalProgressLabel = document.getElementById(
+				'terminalProgressLabel'
+			);
+			const terminalProgressBar = document.getElementById(
+				'terminalProgressBar'
+			);
 			const terminalContainer = document.getElementById('terminal');
 			const term = new Terminal({
 				convertEol: true,
@@ -880,6 +1043,126 @@ var_dump($html_processor->get_tag());
 			term.open(terminalContainer);
 			fitAddon.fit();
 
+			const MIN_TERMINAL_HEIGHT = 140;
+			const MAX_TERMINAL_HEIGHT = 600;
+			let terminalHeight = terminalPane.offsetHeight || 220;
+			let lastExpandedHeight = terminalHeight;
+			let isTerminalCollapsed = false;
+			let isDraggingTerminal = false;
+			let dragStartY = 0;
+			let dragStartHeight = terminalHeight;
+
+			function applyTerminalHeight(height) {
+				terminalHeight = Math.min(
+					MAX_TERMINAL_HEIGHT,
+					Math.max(MIN_TERMINAL_HEIGHT, height)
+				);
+				terminalPane.style.height = `${terminalHeight}px`;
+				if (!isTerminalCollapsed) {
+					requestAnimationFrame(() => fitAddon.fit());
+				}
+			}
+
+			applyTerminalHeight(terminalHeight);
+
+			function setTerminalCollapsed(collapsed) {
+				if (collapsed === isTerminalCollapsed) {
+					return;
+				}
+				isTerminalCollapsed = collapsed;
+				terminalSection.classList.toggle('collapsed', collapsed);
+				terminalToggle.setAttribute(
+					'aria-expanded',
+					String(!collapsed)
+				);
+				if (collapsed) {
+					lastExpandedHeight = terminalHeight;
+					terminalPane.style.height = '0px';
+					terminalPane.setAttribute('aria-hidden', 'true');
+				} else {
+					terminalPane.removeAttribute('aria-hidden');
+					const heightToRestore = Math.min(
+						MAX_TERMINAL_HEIGHT,
+						Math.max(
+							MIN_TERMINAL_HEIGHT,
+							lastExpandedHeight || terminalHeight
+						)
+					);
+					applyTerminalHeight(heightToRestore);
+				}
+			}
+
+			terminalToggle.addEventListener('click', () => {
+				setTerminalCollapsed(!isTerminalCollapsed);
+			});
+
+			function startTerminalDrag(startY) {
+				if (isTerminalCollapsed) {
+					return;
+				}
+				isDraggingTerminal = true;
+				dragStartY = startY;
+				dragStartHeight = terminalHeight;
+				terminalResizeHandle.classList.add('is-dragging');
+				document.body.style.userSelect = 'none';
+			}
+
+			function handleTerminalDrag(currentY) {
+				if (!isDraggingTerminal) {
+					return;
+				}
+				const delta = currentY - dragStartY;
+				applyTerminalHeight(dragStartHeight - delta);
+			}
+
+			function stopTerminalDrag() {
+				if (!isDraggingTerminal) {
+					return;
+				}
+				isDraggingTerminal = false;
+				terminalResizeHandle.classList.remove('is-dragging');
+				document.body.style.userSelect = '';
+			}
+
+			terminalResizeHandle.addEventListener('mousedown', (event) => {
+				event.preventDefault();
+				startTerminalDrag(event.clientY);
+				const onMouseMove = (moveEvent) => {
+					handleTerminalDrag(moveEvent.clientY);
+				};
+				const onMouseUp = () => {
+					stopTerminalDrag();
+					document.removeEventListener('mousemove', onMouseMove);
+					document.removeEventListener('mouseup', onMouseUp);
+				};
+				document.addEventListener('mousemove', onMouseMove);
+				document.addEventListener('mouseup', onMouseUp);
+			});
+
+			terminalResizeHandle.addEventListener('touchstart', (event) => {
+				if (event.touches.length !== 1) {
+					return;
+				}
+				event.preventDefault();
+				const touch = event.touches[0];
+				startTerminalDrag(touch.clientY);
+				const onTouchMove = (moveEvent) => {
+					if (moveEvent.touches.length !== 1) {
+						return;
+					}
+					handleTerminalDrag(moveEvent.touches[0].clientY);
+				};
+				const onTouchEnd = () => {
+					stopTerminalDrag();
+					document.removeEventListener('touchmove', onTouchMove);
+					document.removeEventListener('touchend', onTouchEnd);
+					document.removeEventListener('touchcancel', onTouchEnd);
+				};
+				document.addEventListener('touchmove', onTouchMove);
+				document.addEventListener('touchend', onTouchEnd);
+				document.addEventListener('touchcancel', onTouchEnd);
+			});
+
 			function debounce(fn, delay) {
 				let timeoutId = null;
 				return (...args) => {
@@ -894,7 +1177,11 @@ var_dump($html_processor->get_tag());
 
 			window.addEventListener(
 				'resize',
-				debounce(() => fitAddon.fit(), 150)
+				debounce(() => {
+					if (!isTerminalCollapsed) {
+						fitAddon.fit();
+					}
+				}, 150)
 			);
 
 			const commandHistory = [];
@@ -902,13 +1189,47 @@ var_dump($html_processor->get_tag());
 			let currentLine = '';
 			let isRunningCommand = false;
 			let currentProcess = null;
+			let lastInputChar = '';
+
 			const WP_CLI_PATH = '/tmp/wp-cli.phar';
 			const COMPOSER_PATH = '/tmp/composer.phar';
 
-			term.writeln(
-				'WordPress Playground CLI ready. Type `help` to see available commands.'
-			);
-			prompt(false);
+			let activeDownload = null;
+
+			function showDownloadProgress(label, totalBytes = 0) {
+				activeDownload = { label, totalBytes };
+				terminalProgressRow.hidden = false;
+				terminalProgressBar.classList.toggle(
+					'is-indeterminate',
+					!totalBytes
+				);
+				terminalProgressBar.style.width = totalBytes ? '0%' : '35%';
+				terminalProgressLabel.textContent = totalBytes
+					? `${label} (0%)`
+					: label;
+			}
+
+			function updateDownloadProgress(receivedBytes) {
+				if (!activeDownload || !activeDownload.totalBytes) {
+					return;
+				}
+				const percent = Math.min(
+					100,
+					Math.round(
+						(receivedBytes / activeDownload.totalBytes) * 100
+					)
+				);
+				terminalProgressBar.style.width = `${percent}%`;
+				terminalProgressLabel.textContent = `${activeDownload.label} (${percent}%)`;
+			}
+
+			function hideDownloadProgress() {
+				activeDownload = null;
+				terminalProgressRow.hidden = true;
+				terminalProgressBar.classList.remove('is-indeterminate');
+				terminalProgressBar.style.width = '0%';
+				terminalProgressLabel.textContent = '';
+			}
 
 			function prompt(newLine = true) {
 				const prefix = newLine ? '\r\n$ ' : '$ ';
@@ -938,8 +1259,10 @@ var_dump($html_processor->get_tag());
 			function splitShellCommand(command) {
 				const MODE_NORMAL = 0;
 				const MODE_IN_QUOTE = 1;
+
 				let mode = MODE_NORMAL;
 				let quote = '';
+
 				const parts = [];
 				let currentPart = '';
 				for (let i = 0; i < command.length; i++) {
@@ -974,6 +1297,58 @@ var_dump($html_processor->get_tag());
 				return parts;
 			}
 
+			term.writeln(
+				'WordPress Playground CLI ready. Type `help` to see available commands.'
+			);
+			prompt(false);
+
+			async function downloadWithProgress(url, label) {
+				showDownloadProgress(label);
+				try {
+					const response = await fetch(url);
+					if (!response.ok) {
+						throw new Error(
+							`Failed to download ${label.toLowerCase()}.`
+						);
+					}
+					const totalHeader = response.headers.get('content-length');
+					const totalBytes = totalHeader ? Number(totalHeader) : 0;
+					if (totalBytes) {
+						showDownloadProgress(label, totalBytes);
+					}
+					if (!response.body || !response.body.getReader) {
+						const buffer = await response.arrayBuffer();
+						hideDownloadProgress();
+						return new Uint8Array(buffer);
+					}
+					const reader = response.body.getReader();
+					const chunks = [];
+					let received = 0;
+					while (true) {
+						const { value, done } = await reader.read();
+						if (done) {
+							break;
+						}
+						if (value) {
+							chunks.push(value);
+							received += value.byteLength;
+							updateDownloadProgress(received);
+						}
+					}
+					const bytes = new Uint8Array(received);
+					let offset = 0;
+					for (const chunk of chunks) {
+						bytes.set(chunk, offset);
+						offset += chunk.byteLength;
+					}
+					hideDownloadProgress();
+					return bytes;
+				} catch (error) {
+					hideDownloadProgress();
+					throw error;
+				}
+			}
+
 			async function ensureWpCliBinary() {
 				await bootPromise;
 				if (!client) {
@@ -983,14 +1358,11 @@ var_dump($html_processor->get_tag());
 					return;
 				}
 				term.writeln('\r\nDownloading WP-CLI...');
-				const response = await fetch(
-					'https://raw.githubusercontent.com/wp-cli/builds/gh-pages/phar/wp-cli.phar'
+				const binary = await downloadWithProgress(
+					'https://raw.githubusercontent.com/wp-cli/builds/gh-pages/phar/wp-cli.phar',
+					'Downloading WP-CLI'
 				);
-				if (!response.ok) {
-					throw new Error('Failed to download WP-CLI');
-				}
-				const buffer = await response.arrayBuffer();
-				await client.writeFile(WP_CLI_PATH, new Uint8Array(buffer));
+				await client.writeFile(WP_CLI_PATH, binary);
 				term.writeln('Download complete.');
 			}
 
@@ -1003,43 +1375,24 @@ var_dump($html_processor->get_tag());
 					return;
 				}
 				term.writeln('\r\nDownloading Composer...');
-				const response = await fetch(
-					'https://wordpress-playground-cors-proxy.net/?https://getcomposer.org/download/2.8.12/composer.phar'
+				const binary = await downloadWithProgress(
+					'https://wordpress-playground-cors-proxy.net/?https://getcomposer.org/download/2.8.12/composer.phar',
+					'Downloading Composer'
 				);
-				if (!response.ok) {
-					throw new Error('Failed to download Composer');
-				}
-				const buffer = await response.arrayBuffer();
-				await client.writeFile(
-					COMPOSER_PATH + '.bin',
-					new Uint8Array(buffer)
-				);
+				await client.writeFile(COMPOSER_PATH + '.bin', binary);
 				await client.writeFile(
 					COMPOSER_PATH,
 					`<?php
-					// Composer assumes the grapheme_strlen function is available
-					// and will crash if it's not. Symfony Polyfills somehow do
-					// not kick in in this case.
-					function grapheme_strlen($string) {
-						return strlen($string);
-					}
-					require_once __FILE__ . '.bin';
-				`
+	// Composer assumes the grapheme_strlen function is available
+	// and will crash if it's not. Symfony Polyfills somehow do
+	// not kick in in this case.
+	function grapheme_strlen($string) {
+		return strlen($string);
+	}
+	require_once __FILE__ . '.bin';
+	`
 				);
 				term.writeln('Download complete.');
-			}
-
-			function invertPromise() {
-				let resolve, reject;
-				const promise = new Promise((_resolve, _reject) => {
-					resolve = _resolve;
-					reject = _reject;
-				});
-				return {
-					resolve,
-					reject,
-					promise,
-				};
 			}
 
 			async function runCli(argv, options = {}) {
@@ -1047,70 +1400,130 @@ var_dump($html_processor->get_tag());
 				if (!client) {
 					throw new Error('Playground client is not ready yet.');
 				}
-				console.log({ argv, options });
-				await client.writeFile(
-					'/tmp/test.php',
-					'<?php echo "hi!"; flush(); sleep(60); echo "\nnewline"; ?>'
-				);
-				const response = await client.cli(argv, options);
-
-				const abortedPromise = invertPromise();
+				const requestHandler = client.__internal_getRequestHandler?.();
+				const processManager = requestHandler?.processManager;
+				if (!processManager) {
+					throw new Error('Unable to access the PHP runtime.');
+				}
+				const { php, reap } = await processManager.acquirePHPInstance();
+				let response;
+				try {
+					response = await php.cli(argv, options);
+				} catch (error) {
+					reap();
+					throw error;
+				}
+				const stdoutDecoder = new TextDecoder();
+				const stderrDecoder = new TextDecoder();
+				const stdoutReader = response.stdout.getReader();
+				const stderrReader = response.stderr.getReader();
 				const process = {
 					response,
 					php,
+					stdoutReader,
+					stderrReader,
 					aborted: false,
 					async terminate() {
 						if (process.aborted) {
 							return;
 						}
-						await new Promise((resolve) =>
-							setTimeout(resolve, 1000)
-						);
 						process.aborted = true;
-						abortedPromise.resolve();
-
-						// Ignore cancelation errors and also don't
-						// await these promises. The cancel() calls
-						// go to the remote worker which may be busy
-						// for some more time before it's able to
-						// respond to the cancel() call.
-						response.stdout.cancel().catch(() => {});
-						response.stderr.cancel().catch(() => {});
+						try {
+							await stdoutReader.cancel();
+						} catch {}
+						try {
+							await stderrReader.cancel();
+						} catch {}
+						try {
+							php.exit(130);
+						} catch {}
 					},
 				};
-				const callbackSink = (callback) =>
-					new WritableStream({
-						write(chunk) {
-							if (process.aborted) {
-								return;
-							}
-							if (chunk) {
-								callback(chunk);
-							}
-						},
-					});
-
 				currentProcess = process;
 
-				response.stdout
-					.pipeThrough(new TextDecoderStream())
-					.pipeTo(callbackSink(writeStdout));
+				try {
+					const streamStdout = (async () => {
+						try {
+							while (!process.aborted) {
+								const { value, done } =
+									await stdoutReader.read();
+								if (done) {
+									break;
+								}
+								if (value) {
+									const text = stdoutDecoder.decode(value, {
+										stream: true,
+									});
+									if (text) {
+										writeStdout(text);
+									}
+								}
+							}
+							const flush = stdoutDecoder.decode();
+							if (flush && !process.aborted) {
+								writeStdout(flush);
+							}
+						} catch (error) {
+							if (!process.aborted) {
+								throw error;
+							}
+						}
+					})();
 
-				response.stderr
-					.pipeThrough(new TextDecoderStream())
-					.pipeTo(callbackSink(writeStderr))
-					.catch((error) => {
-						console.log('catch', error);
+					const streamStderr = (async () => {
+						try {
+							while (!process.aborted) {
+								const { value, done } =
+									await stderrReader.read();
+								if (done) {
+									break;
+								}
+								if (value) {
+									const text = stderrDecoder.decode(value, {
+										stream: true,
+									});
+									if (text) {
+										writeStderr(text);
+									}
+								}
+							}
+							const flush = stderrDecoder.decode();
+							if (flush && !process.aborted) {
+								writeStderr(flush);
+							}
+						} catch (error) {
+							if (!process.aborted) {
+								throw error;
+							}
+						}
+					})();
+
+					const exitCodePromise = response.exitCode.catch((error) => {
+						if (!process.aborted) {
+							throw error;
+						}
+						return 130;
 					});
 
-				const exitCode = await Promise.race([
-					response.exitCode,
-					// abortedPromise.promise.then(() => 130),
-				]);
+					exitCodePromise.then(
+						() => reap(),
+						() => reap()
+					);
 
-				currentProcess = null;
+					const [, , exitCode] = await Promise.all([
+						streamStdout.catch(() => {}),
+						streamStderr.catch(() => {}),
+						exitCodePromise,
+					]);
 
-				return { exitCode, aborted: process.aborted };
+					const aborted = process.aborted;
+					if (aborted) {
+						term.writeln('\r\nProcess interrupted.');
+					}
+					return { exitCode, aborted };
+				} finally {
+					currentProcess = null;
+				}
 			}
 
 			async function runTerminalCommand(rawInput) {
@@ -1126,6 +1539,9 @@ var_dump($html_processor->get_tag());
 					prompt();
 					return;
 				}
+				if (isTerminalCollapsed) {
+					setTerminalCollapsed(false);
+				}
 				const [command, ...args] = parts;
 				try {
 					switch (command) {
@@ -1133,6 +1549,19 @@ var_dump($html_processor->get_tag());
 							term.writeln(
 								'\r\nAvailable commands:\r\n  help        Show this message\r\n  php <...>  Run PHP CLI arguments\r\n  wp <...>   Run WP-CLI (auto-downloads if needed)\r\n  composer <...>  Run Composer (auto-downloads if needed)'
 							);
+							break;
+						}
+						case 'php': {
+							if (!args.length) {
+								term.writeln('\r\nUsage: php <arguments>');
+								break;
+							}
+							const result = await runCli(['php', ...args]);
+							if (!result.aborted && result.exitCode !== 0) {
+								term.writeln(
+									`\r\nProcess exited with code ${result.exitCode}`
+								);
+							}
 							break;
 						}
 						case 'wp': {
@@ -1165,26 +1594,7 @@ var_dump($html_processor->get_tag());
 							break;
 						}
 						default: {
-							if (!args.length) {
-								term.writeln(
-									`\r\nUsage: ${command} <arguments>`
-								);
-								break;
-							}
-							const result = await runCli(parts);
-							if (result.exitCode === 127) {
-								term.writeln(
-									`\r\n${command}: command not found`
-								);
-							} else if (
-								!result.aborted &&
-								result.exitCode !== 0
-							) {
-								term.writeln(
-									`\r\nProcess exited with code ${result.exitCode}`
-								);
-							}
-							break;
+							term.writeln(`\r\n${command}: command not found`);
 						}
 					}
 				} catch (error) {
@@ -1207,67 +1617,66 @@ var_dump($html_processor->get_tag());
 				try {
 					await currentProcess.terminate();
 				} finally {
+					currentProcess = null;
 					isRunningCommand = false;
 				}
-
-				currentProcess = null;
 			}
 
-			term.onData((data) => {
-				if (data === '\u0003') {
-					term.write('^C');
-					void abortActiveProcess();
-					currentLine = '';
-					return;
-				}
-				if (isRunningCommand) {
-					return;
-				}
-				switch (data) {
-					case '\r': {
-						term.write('\r\n');
-						const submitted = currentLine;
-						if (submitted.trim()) {
-							commandHistory.unshift(submitted);
-						}
-						historyIndex = -1;
+			term.onData((chunk) => {
+				for (const char of chunk) {
+					if (char === '\u0003') {
+						term.write('^C');
 						currentLine = '';
-						isRunningCommand = true;
-						void runTerminalCommand(submitted);
-						break;
+						void abortActiveProcess();
+						lastInputChar = char;
+						continue;
 					}
-					case '\u007F': {
-						if (currentLine.length > 0) {
-							currentLine = currentLine.slice(0, -1);
-							term.write('\b \b');
+					if (isRunningCommand) {
+						lastInputChar = char;
+						continue;
+					}
+					switch (char) {
+						case '\r':
+						case '\n': {
+							if (char === '\n' && lastInputChar === '\r') {
+								break;
+							}
+							term.write('\r\n');
+							const submitted = currentLine;
+							if (submitted.trim()) {
+								commandHistory.unshift(submitted);
+							}
+							historyIndex = -1;
+							currentLine = '';
+							isRunningCommand = true;
+							void runTerminalCommand(submitted);
+							break;
 						}
-						break;
-					}
-					default: {
-						if ((data >= ' ' && data <= '~') || data >= '\u00a0') {
-							currentLine += data;
-							term.write(data);
+						case '\u007f': {
+							if (currentLine.length > 0) {
+								currentLine = currentLine.slice(0, -1);
+								term.write('\b \b');
+							}
+							break;
 						}
-						break;
+						default: {
+							if (char === '\n') {
+								break;
+							}
+							if (char >= ' ' || char >= '\u00a0') {
+								currentLine += char;
+								term.write(char);
+							}
+							break;
+						}
 					}
+					lastInputChar = char;
 				}
 			});
 
 			term.attachCustomKeyEventHandler((event) => {
 				if (event.type !== 'keydown') {
 					return true;
-				}
-				if ((event.metaKey || event.ctrlKey) && event.code === 'KeyV') {
-					navigator.clipboard
-						.readText()
-						.then((text) => {
-							if (!isRunningCommand && text) {
-								currentLine += text;
-								refreshInputLine();
-							}
-						})
-						.catch(() => {});
-					return false;
 				}
 				if (event.metaKey || event.ctrlKey) {
 					return true;
@@ -1299,7 +1708,6 @@ var_dump($html_processor->get_tag());
 				}
 				return true;
 			});
-
 			// Detect platform for keyboard shortcut display
 			const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
 			const shortcutText = isMac ? 'Cmd+S' : 'Ctrl+S';

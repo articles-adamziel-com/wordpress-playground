@@ -9,6 +9,7 @@ export {
 	normalizePath,
 	isParentOf,
 } from './paths';
+export { splitShellCommand } from './split-shell-command';
 export { createSpawnHandler } from './create-spawn-handler';
 export { randomString } from './random-string';
 export { randomFilename } from './random-filename';

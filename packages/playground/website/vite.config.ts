@@ -177,6 +177,9 @@ export default defineConfig(({ command, mode }) => {
 					index: fileURLToPath(
 						new URL('./index.html', import.meta.url)
 					),
+					'beta-php-playground.html': fileURLToPath(
+						new URL('./beta-php-playground.html', import.meta.url)
+					),
 					'index.html': fileURLToPath(
 						new URL('./demos/index.html', import.meta.url)
 					),
