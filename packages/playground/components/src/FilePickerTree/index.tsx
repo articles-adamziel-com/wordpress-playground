@@ -240,8 +240,8 @@ export const FilePickerTree: React.FC<FilePickerControlProps> = ({
 		if (!invalidatePath) {
 			return;
 		}
-		// If it's expanded and we can load, refresh immediately without clearing cache
-		if (onLoadChildren && expanded[invalidatePath]) {
+		// Always reload to get updated child names after operations like rename
+		if (onLoadChildren) {
 			setLoadingPaths((prev) => ({
 				...prev,
 				[invalidatePath]: true,
@@ -261,7 +261,7 @@ export const FilePickerTree: React.FC<FilePickerControlProps> = ({
 					});
 				});
 		}
-	}, [invalidatePath, invalidateKey, onLoadChildren, expanded]);
+	}, [invalidatePath, invalidateKey, onLoadChildren]);
 
 	// Preserve expansion and cached children across directory rename by remapping
 	// path keys from old to new. Also update selection and focus if they were inside.

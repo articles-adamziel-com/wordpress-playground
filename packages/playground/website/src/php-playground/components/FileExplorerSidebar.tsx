@@ -73,15 +73,17 @@ export default function FileExplorerSidebar({
 	const treeRef = useRef<PlaygroundFilePickerTreeRef | null>(null);
 	const dispatch = useAppDispatch();
 
+	// Only set initial path once to prevent jumping between directories
 	const treeInitialPath = useMemo(() => {
 		return normalizeFsPath(
 			forceSelectedPath ??
-				selectedDirPath ??
 				(currentPath
 					? dirnameSafe(currentPath)
-					: '/wordpress/workspace')
+					: selectedDirPath ?? '/wordpress/workspace')
 		);
-	}, [forceSelectedPath, selectedDirPath, currentPath]);
+		// Remove selectedDirPath from dependencies to prevent unwanted updates
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [forceSelectedPath, currentPath]);
 
 	return (
 		<div className={styles.fileExplorerContainer}>

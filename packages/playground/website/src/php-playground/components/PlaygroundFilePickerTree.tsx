@@ -202,6 +202,9 @@ const PlaygroundFilePickerTree = forwardRef<
 		[renamingPath, getDirname, getBasename]
 	);
 
+	// Track when we need to refresh root files
+	const [rootRefreshKey, setRootRefreshKey] = useState(0);
+
 	useEffect(() => {
 		let cancelled = false;
 		async function init() {
@@ -237,6 +240,7 @@ const PlaygroundFilePickerTree = forwardRef<
 		rootName,
 		playgroundClient,
 		JSON.stringify(excludePaths),
+		rootRefreshKey,
 	]);
 
 	const coreInitialPath = useMemo(() => {
@@ -446,8 +450,13 @@ const PlaygroundFilePickerTree = forwardRef<
 			} finally {
 				setLocalRenamingPath(null);
 				const parentDir = getDirname(normalized);
-				setInvalidatePath(parentDir);
-				setInvalidateKey((k) => k + 1);
+				if (parentDir === normalizedRoot && normalizedRoot === '/') {
+					// Special case: deleting at root level, refresh root files
+					setRootRefreshKey((k) => k + 1);
+				} else {
+					setInvalidatePath(parentDir);
+					setInvalidateKey((k) => k + 1);
+				}
 				// Focus on the parent directory after deletion
 				setFocusRequestPath(parentDir);
 				setFocusRequestKey((k) => k + 1);
@@ -689,9 +698,18 @@ const PlaygroundFilePickerTree = forwardRef<
 					} finally {
 						pendingCreateRef.current = null;
 						setLocalRenamingPath(null);
-						setInvalidatePath(parent);
-						setInvalidateKey((k) => k + 1);
-						// focus the renamed entry or its new parent row
+						// Always invalidate parent to update the file list with new name
+						if (
+							parent === normalizedRoot &&
+							normalizedRoot === '/'
+						) {
+							// Special case: renaming at root level, refresh root files
+							setRootRefreshKey((k) => k + 1);
+						} else {
+							setInvalidatePath(parent);
+							setInvalidateKey((k) => k + 1);
+						}
+						// focus the renamed entry
 						setFocusRequestPath(candidateNormalized);
 						setFocusRequestKey((k) => k + 1);
 					}
