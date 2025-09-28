@@ -328,9 +328,17 @@ export const Terminal = ({ isCollapsed, resizeToken = 0 }: TerminalProps) => {
 // Composer assumes the grapheme_strlen function is available
 // and will crash if it's not. Symfony Polyfills somehow do
 // not kick in in this case.
-function grapheme_strlen($string) {
-	return strlen($string);
+if(!function_exists('grapheme_strlen')) {
+	function grapheme_strlen($string) {
+		return strlen($string);
+	}
 }
+if(!function_exists('grapheme_substr')) {
+	function grapheme_substr($string, $start, $length) {
+		return substr($string, $start, $length);
+	}
+}
+
 require_once __FILE__ . '.bin';
 `
 			);
