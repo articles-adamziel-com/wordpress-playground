@@ -72,7 +72,7 @@ export const Terminal = ({ isCollapsed, resizeToken = 0 }: TerminalProps) => {
 	const fitAddonRef = useRef<FitAddon | null>(null);
 	const progressRef = useRef<DownloadProgress | null>(null);
 	// @TODO: Initialize this from the client, not with a hardcoded default.
-	const cwdRef = useRef<string>('/workspace');
+	const cwdRef = useRef<string>('/wordpress/workspace');
 
 	useEffect(() => {
 		const container = terminalContainerRef.current;
@@ -321,9 +321,9 @@ export const Terminal = ({ isCollapsed, resizeToken = 0 }: TerminalProps) => {
 				'https://wordpress-playground-cors-proxy.net/?https://getcomposer.org/download/2.8.12/composer.phar',
 				'Composer download'
 			);
-			await client.writeFile(`${path}.bin`, binary);
+			await client.writeFile(`${path}`, binary);
 			await client.writeFile(
-				path,
+				`/internal/shared/preload/grapheme_polyfill.php`,
 				`<?php
 // Composer assumes the grapheme_strlen function is available
 // and will crash if it's not. Symfony Polyfills somehow do
@@ -338,8 +338,6 @@ if(!function_exists('grapheme_substr')) {
 		return substr($string, $start, $length);
 	}
 }
-
-require_once __FILE__ . '.bin';
 `
 			);
 		};

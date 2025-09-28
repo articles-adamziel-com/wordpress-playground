@@ -1,16 +1,24 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, {
+	forwardRef,
+	useCallback,
+	useEffect,
+	useImperativeHandle,
+	useRef,
+	useState,
+} from 'react';
 import {
 	__experimentalTreeGrid as TreeGrid,
 	__experimentalTreeGridRow as TreeGridRow,
 	__experimentalTreeGridCell as TreeGridCell,
 	Button,
-	Spinner,
 } from '@wordpress/components';
-import { Icon, chevronRight, chevronDown } from '@wordpress/icons';
+import { Icon, chevronDown, chevronRight } from '@wordpress/icons';
 import '@wordpress/components/build-style/style.css';
 import css from './style.module.css';
 import classNames from 'classnames';
-import { folder, file } from '../icons';
+import { file, folder } from '../icons';
+
+type ExpandedNodePaths = Record<string, boolean>;
 
 export type FileNode = {
 	name: string;
@@ -18,12 +26,11 @@ export type FileNode = {
 	children?: FileNode[];
 };
 
-export type FilePickerControlProps = {
+export type FilePickerTreeProps = {
 	files: FileNode[];
 	initialPath?: string;
-	onSelect?: (path: string) => void;
-	isLoading?: boolean;
 	error?: string;
+	onSelect?: (path: string) => void;
 	onLoadChildren?: (path: string) => Promise<FileNode[]>;
 	onContextMenu?: (
 		event: React.MouseEvent,
@@ -34,88 +41,79 @@ export type FilePickerControlProps = {
 	onRename?: (path: string, newName: string) => void;
 	onRenameCancel?: (path: string) => void;
 	autoFocus?: boolean;
-	// Optional: invalidate a specific folder path cache and reload its children without remounting
-	invalidatePath?: string | null;
-	// Optional: change this to force re-invalidation even if the path is the same
-	invalidateKey?: number;
-	// Optional: remap expanded paths and cached children after a directory rename
-	renameMapping?: { from: string; to: string } | null;
-	// Optional: bump to apply a new rename mapping
-	renameKey?: number;
-	// Optional: explicitly request focusing a particular node path
-	focusPathRequest?: string | null;
-	// Optional: bump to trigger a focus request
-	focusRequestKey?: number;
-	// Optional: request expanding a particular path's ancestor chain
-	expandPathRequest?: string | null;
-	// Optional: bump to trigger an expand request
-	expandRequestKey?: number;
 };
 
-type ExpandedNodePaths = Record<string, boolean>;
+export type FilePickerTreeHandle = {
+	focusPath: (
+		path: string,
+		options?: { select?: boolean; domFocus?: boolean; notify?: boolean }
+	) => void;
+	selectPath: (path: string) => void;
+	expandToPath: (path: string) => Promise<void>;
+	refresh: (path: string) => Promise<FileNode[] | undefined>;
+	remapPath: (from: string, to: string) => void;
+};
 
-type LoadedChildrenMap = Record<string, FileNode[]>;
-
-export const FilePickerTree: React.FC<FilePickerControlProps> = ({
-	isLoading = false,
-	error = undefined,
-	files,
-	initialPath,
-	onSelect = () => {},
-	onLoadChildren,
-	onContextMenu,
-	renamingPath = null,
-	onRename,
-	onRenameCancel,
-	autoFocus = true,
-	invalidatePath = null,
-	invalidateKey = 0,
-	renameMapping = null,
-	renameKey = 0,
-	focusPathRequest = null,
-	focusRequestKey = 0,
-	expandPathRequest = null,
-	expandRequestKey = 0,
-}) => {
-	function buildPathChain(path: string): string[] {
-		if (!path) return [];
-		const normalized =
-			path
-				.replaceAll(/\\+/g, '/')
-				.replace(/\/{2,}/g, '/')
-				.replace(/\/$/, '') || path;
-		const hasLeadingSlash = normalized.startsWith('/');
-		const parts = normalized.split('/').filter(Boolean);
-		const chain: string[] = [];
-		let current = hasLeadingSlash ? '/' : '';
-		if (hasLeadingSlash) chain.push('/');
-		for (const part of parts) {
-			if (!current || current === '/') {
-				current = current === '/' ? `/${part}` : part;
-			} else {
-				current = `${current}/${part}`;
-			}
-			chain.push(current);
+function buildPathChain(path: string): string[] {
+	if (!path) return [];
+	const normalized =
+		path
+			.replaceAll(/\\+/g, '/')
+			.replace(/\/{2,}/g, '/')
+			.replace(/\/$/, '') || path;
+	const hasLeadingSlash = normalized.startsWith('/');
+	const parts = normalized.split('/').filter(Boolean);
+	const chain: string[] = [];
+	let current = hasLeadingSlash ? '/' : '';
+	if (hasLeadingSlash) chain.push('/');
+	for (const part of parts) {
+		if (!current || current === '/') {
+			current = current === '/' ? `/${part}` : part;
+		} else {
+			current = `${current}/${part}`;
 		}
-		return chain;
+		chain.push(current);
 	}
+	return chain;
+}
+
+export const FilePickerTree = forwardRef<
+	FilePickerTreeHandle,
+	FilePickerTreeProps
+>(function FilePickerTree(
+	{
+		files,
+		initialPath,
+		error,
+		onSelect = () => {},
+		onLoadChildren,
+		onContextMenu,
+		renamingPath = null,
+		onRename,
+		onRenameCancel,
+		autoFocus = true,
+	},
+	ref
+) {
 	const [expanded, setExpanded] = useState<ExpandedNodePaths>(() => {
 		if (!initialPath) {
 			return {};
 		}
 		const initialExpanded: ExpandedNodePaths = {};
-		for (const p of buildPathChain(initialPath)) {
-			initialExpanded[p] = true;
+		for (const path of buildPathChain(initialPath)) {
+			initialExpanded[path] = true;
 		}
 		return initialExpanded;
 	});
-	const [selectedPath, setSelectedPath] = useState<string | null>(() =>
-		initialPath ? initialPath : null
+	const [selectedPath, setSelectedPath] = useState<string | null>(
+		() => initialPath ?? null
 	);
-	const [focusedPath, setFocusedPath] = useState<string | null>(() =>
-		initialPath ? initialPath : null
+	const [focusedPath, setFocusedPath] = useState<string | null>(
+		() => initialPath ?? null
 	);
-	const [lazyChildren, setLazyChildren] = useState<LoadedChildrenMap>({});
+	const [lazyChildren, setLazyChildren] = useState<
+		Record<string, FileNode[]>
+	>({});
 	const [loadingPaths, setLoadingPaths] = useState<Record<string, boolean>>(
 		{}
 	);
@@ -123,28 +121,23 @@ export const FilePickerTree: React.FC<FilePickerControlProps> = ({
 	const containerRef = useRef<HTMLDivElement>(null);
 	const searchBufferTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 	const loadingPathsRef = useRef(loadingPaths);
+	const lazyChildrenRef = useRef(lazyChildren);
 
 	useEffect(() => {
 		loadingPathsRef.current = loadingPaths;
 	}, [loadingPaths]);
 
-	const expandNode = useCallback((path: string, isOpen: boolean) => {
-		setExpanded((prevState) => ({
-			...prevState,
-			[path]: isOpen,
-		}));
-	}, []);
+	useEffect(() => {
+		lazyChildrenRef.current = lazyChildren;
+	}, [lazyChildren]);
 
-	const selectPath = useCallback(
-		(path: string) => {
-			setSelectedPath(path);
-			onSelect(path);
-		},
-		[onSelect]
-	);
-
-	const focusPath = useCallback((path: string) => {
-		setFocusedPath(path);
+	const focusDomNode = useCallback((path: string) => {
+		const focusTarget = containerRef.current?.querySelector(
+			`[data-path="${path}"]`
+		) as HTMLElement | null;
+		if (focusTarget && typeof focusTarget.focus === 'function') {
+			focusTarget.focus();
+		}
 	}, []);
 
 	const generatePath = useCallback(
@@ -154,26 +147,6 @@ export const FilePickerTree: React.FC<FilePickerControlProps> = ({
 		},
 		[]
 	);
-
-	// Only use initialPath for the initial mount to prevent flicker when switching directories
-	const hasInitializedRef = useRef(false);
-	useEffect(() => {
-		if (!initialPath || hasInitializedRef.current) {
-			return;
-		}
-		hasInitializedRef.current = true;
-		const chain = buildPathChain(initialPath);
-		setExpanded((prev) => {
-			const next = { ...prev } as ExpandedNodePaths;
-			for (const p of chain) {
-				next[p] = true;
-			}
-			return next;
-		});
-		const target = chain[chain.length - 1] || initialPath;
-		setFocusedPath(target);
-		setSelectedPath(target);
-	}, [initialPath]);
 
 	const getResolvedChildren = useCallback(
 		(node: FileNode, path: string): FileNode[] | undefined => {
@@ -188,16 +161,14 @@ export const FilePickerTree: React.FC<FilePickerControlProps> = ({
 	const loadChildrenForPath = useCallback(
 		async (path: string, node: FileNode) => {
 			if (!onLoadChildren || node.type !== 'folder') {
-				return;
+				return node.children;
 			}
-			const existingChildren = node.children ?? lazyChildren[path];
+			const existingChildren =
+				node.children ?? lazyChildrenRef.current[path];
 			if (existingChildren || loadingPathsRef.current[path]) {
 				return existingChildren;
 			}
-			setLoadingPaths((prev) => ({
-				...prev,
-				[path]: true,
-			}));
+			setLoadingPaths((prev) => ({ ...prev, [path]: true }));
 			try {
 				const children = await onLoadChildren(path);
 				setLazyChildren((prev) => ({
@@ -216,62 +187,94 @@ export const FilePickerTree: React.FC<FilePickerControlProps> = ({
 		[onLoadChildren]
 	);
 
-	const handleToggleExpand = useCallback(
-		async (path: string, node: FileNode, isOpen: boolean) => {
-			expandNode(path, isOpen);
-			if (isOpen) {
-				await loadChildrenForPath(path, node);
-			} else {
-				// Clear cached children on collapse so that reopening refreshes the listing
-				setLazyChildren((prev) => {
-					if (prev[path] === undefined) return prev;
-					const next = { ...prev } as LoadedChildrenMap;
+	const refreshChildren = useCallback(
+		async (path: string) => {
+			if (!onLoadChildren) {
+				return undefined;
+			}
+			setLoadingPaths((prev) => ({ ...prev, [path]: true }));
+			try {
+				const children = await onLoadChildren(path);
+				setLazyChildren((prev) => ({
+					...prev,
+					[path]: children ?? [],
+				}));
+				return children;
+			} finally {
+				setLoadingPaths((prev) => {
+					const next = { ...prev };
 					delete next[path];
 					return next;
 				});
 			}
 		},
-		[expandNode, loadChildrenForPath]
+		[onLoadChildren]
 	);
 
-	// Invalidate a folder's children and refresh them in-place without clearing first,
-	// preventing a brief empty state (visible flicker) during rename/delete/create.
-	useEffect(() => {
-		if (!invalidatePath) {
-			return;
-		}
-		// Always reload to get updated child names after operations like rename
-		if (onLoadChildren) {
-			setLoadingPaths((prev) => ({
+	const toggleNode = useCallback(
+		async (path: string, node: FileNode, isOpen: boolean) => {
+			setExpanded((prev) => ({
 				...prev,
-				[invalidatePath]: true,
+				[path]: isOpen,
 			}));
-			void onLoadChildren(invalidatePath)
-				.then((children) => {
-					setLazyChildren((prev) => ({
-						...prev,
-						[invalidatePath]: children ?? [],
-					}));
-				})
-				.finally(() => {
-					setLoadingPaths((prev) => {
-						const next = { ...prev };
-						delete next[invalidatePath as string];
-						return next;
-					});
+			if (isOpen) {
+				await loadChildrenForPath(path, node);
+			} else {
+				setLazyChildren((prev) => {
+					if (prev[path] === undefined) {
+						return prev;
+					}
+					const next = { ...prev } as Record<string, FileNode[]>;
+					delete next[path];
+					return next;
 				});
-		}
-	}, [invalidatePath, invalidateKey, onLoadChildren]);
+			}
+		},
+		[loadChildrenForPath]
+	);
 
-	// Preserve expansion and cached children across directory rename by remapping
-	// path keys from old to new. Also update selection and focus if they were inside.
-	useEffect(() => {
-		if (!renameMapping) {
+	const expandToPath = useCallback(
+		async (targetPath: string) => {
+			if (!targetPath) return;
+			const chain = buildPathChain(targetPath);
+			if (chain.length === 0) return;
+			setExpanded((prev) => {
+				const next = { ...prev } as ExpandedNodePaths;
+				for (const segment of chain) {
+					next[segment] = true;
+				}
+				return next;
+			});
+			if (!onLoadChildren) {
+				return;
+			}
+
+			let currentChildren: FileNode[] | undefined = files;
+			let parentPath = '';
+			for (const segmentPath of chain) {
+				const nextNode = currentChildren?.find((child) => {
+					const childPath = generatePath(child, parentPath);
+					return childPath === segmentPath;
+				});
+				if (!nextNode || nextNode.type !== 'folder') {
+					parentPath = segmentPath;
+					currentChildren = [];
+					continue;
+				}
+				const loaded = await loadChildrenForPath(segmentPath, nextNode);
+				currentChildren =
+					loaded ?? lazyChildrenRef.current[segmentPath];
+				parentPath = segmentPath;
+			}
+		},
+		[files, generatePath, loadChildrenForPath, onLoadChildren]
+	);
+
+	const remapPathState = useCallback((from: string, to: string) => {
+		if (!from || !to || from === to) {
 			return;
 		}
-		const { from, to } = renameMapping;
-		const withTrailingSlash = from.endsWith('/') ? from : `${from}`;
-		const fromPrefix = withTrailingSlash + (from === '/' ? '' : '/');
+		const fromPrefix = from === '/' ? '/' : `${from}/`;
 		const remapKey = (key: string): string | null => {
 			if (key === from) return to;
 			if (key.startsWith(fromPrefix)) {
@@ -286,9 +289,7 @@ export const FilePickerTree: React.FC<FilePickerControlProps> = ({
 			for (const key of Object.keys(prev)) {
 				const mapped = remapKey(key);
 				if (mapped && mapped !== key) {
-					if (!next[mapped]) {
-						next[mapped] = prev[key];
-					}
+					next[mapped] = prev[key];
 					delete next[key];
 					changed = true;
 				}
@@ -298,13 +299,11 @@ export const FilePickerTree: React.FC<FilePickerControlProps> = ({
 
 		setLazyChildren((prev) => {
 			let changed = false;
-			const next: LoadedChildrenMap = { ...prev };
+			const next = { ...prev } as Record<string, FileNode[]>;
 			for (const key of Object.keys(prev)) {
 				const mapped = remapKey(key);
 				if (mapped && mapped !== key) {
-					if (next[mapped] === undefined) {
-						next[mapped] = prev[key];
-					}
+					next[mapped] = prev[key];
 					delete next[key];
 					changed = true;
 				}
@@ -322,115 +321,83 @@ export const FilePickerTree: React.FC<FilePickerControlProps> = ({
 			const mapped = remapKey(prev);
 			return mapped ?? prev;
 		});
-	}, [renameKey, renameMapping]);
+	}, []);
 
-	// Explicit focus requests: set selection/focus and move DOM focus without relying on autoFocus
+	const selectPath = useCallback(
+		(path: string, notify = true) => {
+			setSelectedPath(path);
+			if (notify) {
+				onSelect(path);
+			}
+		},
+		[onSelect]
+	);
+
+	useImperativeHandle(
+		ref,
+		() => ({
+			focusPath: (
+				path: string,
+				options: {
+					select?: boolean;
+					domFocus?: boolean;
+					notify?: boolean;
+				} = {}
+			) => {
+				if (!path) return;
+				const {
+					select = true,
+					domFocus = true,
+					notify = false,
+				} = options;
+				if (select) {
+					selectPath(path, notify);
+				}
+				setFocusedPath(path);
+				if (domFocus) {
+					focusDomNode(path);
+				}
+			},
+			selectPath: (path: string) => {
+				if (!path) return;
+				selectPath(path);
+				setFocusedPath(path);
+				focusDomNode(path);
+			},
+			expandToPath,
+			refresh: refreshChildren,
+			remapPath: remapPathState,
+		}),
+		[
+			expandToPath,
+			focusDomNode,
+			refreshChildren,
+			remapPathState,
+			selectPath,
+		]
+	);
+
+	const hasInitializedRef = useRef(false);
 	useEffect(() => {
-		if (!focusPathRequest) {
+		if (!initialPath || hasInitializedRef.current) {
 			return;
 		}
-		setSelectedPath(focusPathRequest);
-		setFocusedPath(focusPathRequest);
-		const focusTarget = containerRef.current?.querySelector(
-			`[data-path="${focusPathRequest}"]`
-		) as HTMLElement | null;
-		if (focusTarget && typeof focusTarget.focus === 'function') {
-			focusTarget.focus();
-		}
-	}, [focusRequestKey, focusPathRequest, files, lazyChildren]);
-
-	// Expand request: expand the path's ancestor chain and load children in-place
-	useEffect(() => {
-		if (!expandPathRequest) {
-			return;
-		}
-		const chain = buildPathChain(expandPathRequest);
+		hasInitializedRef.current = true;
+		const chain = buildPathChain(initialPath);
 		setExpanded((prev) => {
 			const next = { ...prev } as ExpandedNodePaths;
-			for (const p of chain) {
-				next[p] = true;
+			for (const path of chain) {
+				next[path] = true;
 			}
 			return next;
 		});
+		const target = chain[chain.length - 1] || initialPath;
+		setFocusedPath(target);
+		setSelectedPath(target);
 		if (onLoadChildren) {
-			for (const p of chain) {
-				setLoadingPaths((prev) => ({ ...prev, [p]: true }));
-				void onLoadChildren(p)
-					.then((children) => {
-						setLazyChildren((prev) => ({
-							...prev,
-							[p]: children ?? [],
-						}));
-					})
-					.finally(() => {
-						setLoadingPaths((prev) => {
-							const next = { ...prev };
-							delete next[p];
-							return next;
-						});
-					});
-			}
+			void expandToPath(initialPath);
 		}
-	}, [expandRequestKey, expandPathRequest, onLoadChildren]);
-
-	// Auto-expand and load the root when it is '/'
-	useEffect(() => {
-		if (!onLoadChildren || files.length === 0) {
-			return;
-		}
-		const rootNode = files[0];
-		if (rootNode?.type === 'folder' && rootNode.name === '/') {
-			setExpanded((prev) => (prev['/'] ? prev : { ...prev, '/': true }));
-			if (!lazyChildren['/'] && !loadingPathsRef.current['/']) {
-				void loadChildrenForPath('/', rootNode);
-			}
-		}
-	}, [files, onLoadChildren, lazyChildren, loadChildrenForPath]);
-
-	useEffect(() => {
-		if (!initialPath || !onLoadChildren) {
-			return;
-		}
-
-		let isMounted = true;
-		const loadInitialPath = async () => {
-			const chain = buildPathChain(initialPath);
-			let currentChildren = files;
-			let parentPath = '';
-			for (let i = 0; i < chain.length; i++) {
-				const segmentPath = chain[i];
-				const nextNode = currentChildren?.find((child) => {
-					const childPath = generatePath(child, parentPath);
-					return childPath === segmentPath;
-				});
-				if (!nextNode) {
-					break;
-				}
-				if (nextNode.type !== 'folder') {
-					currentChildren = [];
-					continue;
-				}
-				const existingChildren =
-					nextNode.children ?? lazyChildren[segmentPath];
-				if (!existingChildren && isMounted) {
-					const loaded = await loadChildrenForPath(
-						segmentPath,
-						nextNode
-					);
-					currentChildren = loaded ?? [];
-				} else {
-					currentChildren = existingChildren ?? [];
-				}
-				parentPath = segmentPath;
-			}
-		};
-
-		loadInitialPath();
-
-		return () => {
-			isMounted = false;
-		};
-	}, [initialPath, files, onLoadChildren, loadChildrenForPath]);
+	}, [initialPath, expandToPath, onLoadChildren]);
 
 	useEffect(() => {
 		if (!focusedPath) {
@@ -446,20 +413,29 @@ export const FilePickerTree: React.FC<FilePickerControlProps> = ({
 		if (!autoFocus) {
 			return;
 		}
-		const focusTarget = containerRef.current?.querySelector(
-			`[data-path="${focusedPath}"]`
-		) as HTMLElement | null;
-		if (focusTarget && typeof focusTarget.focus === 'function') {
-			focusTarget.focus();
-		}
+		focusDomNode(focusedPath);
 	}, [
 		autoFocus,
 		files,
 		focusedPath,
 		generatePath,
-		lazyChildren,
 		renamingPath,
+		focusDomNode,
 	]);
+
+	useEffect(() => {
+		if (!onLoadChildren || files.length === 0) {
+			return;
+		}
+		const rootNode = files[0];
+		if (rootNode?.type !== 'folder' || rootNode.name !== '/') {
+			return;
+		}
+		setExpanded((prev) => (prev['/'] ? prev : { ...prev, '/': true }));
+		if (!lazyChildrenRef.current['/'] && !loadingPathsRef.current['/']) {
+			void loadChildrenForPath('/', rootNode);
+		}
+	}, [files, onLoadChildren, loadChildrenForPath]);
 
 	useEffect(() => {
 		return () => {
@@ -471,7 +447,7 @@ export const FilePickerTree: React.FC<FilePickerControlProps> = ({
 
 	const [searchBuffer, setSearchBuffer] = useState('');
 
-	function handleKeyDown(event: React.KeyboardEvent<HTMLDivElement>) {
+	const handleKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
 		if (event.key.length === 1 && event.key.match(/\S/)) {
 			const newSearchBuffer = searchBuffer + event.key.toLowerCase();
 			setSearchBuffer(newSearchBuffer);
@@ -481,37 +457,37 @@ export const FilePickerTree: React.FC<FilePickerControlProps> = ({
 			searchBufferTimeoutRef.current = setTimeout(() => {
 				setSearchBuffer('');
 			}, 1000);
-
-			if (containerRef.current) {
-				const buttons = Array.from(
-					containerRef.current.querySelectorAll('.file-node-button')
+			if (!containerRef.current) {
+				return;
+			}
+			const buttons = Array.from(
+				containerRef.current.querySelectorAll('.file-node-button')
+			);
+			const activeElement = document.activeElement;
+			let startIndex = 0;
+			if (
+				activeElement &&
+				buttons.includes(activeElement as HTMLButtonElement)
+			) {
+				startIndex = buttons.indexOf(
+					activeElement as HTMLButtonElement
 				);
-				const activeElement = document.activeElement;
-				let startIndex = 0;
+			}
+			for (let i = 0; i < buttons.length; i++) {
+				const index = (startIndex + i) % buttons.length;
+				const button = buttons[index] as HTMLElement;
 				if (
-					activeElement &&
-					buttons.includes(activeElement as HTMLButtonElement)
+					button.textContent
+						?.toLowerCase()
+						.trim()
+						.startsWith(newSearchBuffer)
 				) {
-					startIndex = buttons.indexOf(
-						activeElement as HTMLButtonElement
-					);
-				}
-				for (let i = 0; i < buttons.length; i++) {
-					const index = (startIndex + i) % buttons.length;
-					const button = buttons[index] as HTMLElement;
-					if (
-						button.textContent
-							?.toLowerCase()
-							.trim()
-							.startsWith(newSearchBuffer)
-					) {
-						button.focus();
-						const path = button.getAttribute('data-path');
-						if (path) {
-							focusPath(path);
-						}
-						break;
+					button.focus();
+					const path = button.getAttribute('data-path');
+					if (path) {
+						setFocusedPath(path);
 					}
+					break;
 				}
 			}
 		} else {
@@ -520,15 +496,7 @@ export const FilePickerTree: React.FC<FilePickerControlProps> = ({
 				clearTimeout(searchBufferTimeoutRef.current);
 			}
 		}
-	}
-
-	if (isLoading) {
-		return (
-			<div className={css['loadingContainer']}>
-				<Spinner />
-			</div>
-		);
-	}
+	};
 
 	if (error) {
 		return (
@@ -550,14 +518,13 @@ export const FilePickerTree: React.FC<FilePickerControlProps> = ({
 						position={index + 1}
 						setSize={files.length}
 						expandedNodePaths={expanded}
-						expandNode={handleToggleExpand}
+						onToggle={toggleNode}
 						selectedNode={selectedPath}
+						focusPath={(path) => setFocusedPath(path)}
 						focusedNode={focusedPath}
 						selectPath={selectPath}
-						focusPath={focusPath}
 						generatePath={generatePath}
 						getChildren={getResolvedChildren}
-						loadingPaths={loadingPaths}
 						onContextMenu={onContextMenu}
 						renamingPath={renamingPath}
 						onRename={onRename}
@@ -567,7 +534,7 @@ export const FilePickerTree: React.FC<FilePickerControlProps> = ({
 			</TreeGrid>
 		</div>
 	);
-};
+});
 
 const NodeRow: React.FC<{
 	node: FileNode;
@@ -575,18 +542,17 @@ const NodeRow: React.FC<{
 	position: number;
 	setSize: number;
 	expandedNodePaths: ExpandedNodePaths;
-	expandNode: (
+	onToggle: (
 		path: string,
 		node: FileNode,
 		isOpen: boolean
 	) => void | Promise<void>;
-	selectPath: (path: string) => void;
 	selectedNode: string | null;
 	focusPath: (path: string) => void;
 	focusedNode: string | null;
+	selectPath: (path: string, notify?: boolean) => void;
 	generatePath: (node: FileNode, parentPath?: string) => string;
 	getChildren: (node: FileNode, path: string) => FileNode[] | undefined;
-	loadingPaths: Record<string, boolean>;
 	onContextMenu?: (
 		event: React.MouseEvent,
 		node: FileNode,
@@ -602,14 +568,13 @@ const NodeRow: React.FC<{
 	position,
 	setSize,
 	expandedNodePaths,
-	expandNode,
-	selectPath,
+	onToggle,
 	selectedNode,
 	focusPath,
 	focusedNode,
+	selectPath,
 	generatePath,
 	getChildren,
-	loadingPaths,
 	onContextMenu,
 	renamingPath,
 	onRename,
@@ -643,7 +608,7 @@ const NodeRow: React.FC<{
 
 	const toggleOpen = () => {
 		if (node.type === 'folder') {
-			expandNode(path, node, !isExpanded);
+			onToggle(path, node, !isExpanded);
 		}
 	};
 
@@ -684,7 +649,7 @@ const NodeRow: React.FC<{
 			event.key === 'Spacebar'
 		) {
 			if (node.type === 'folder') {
-				expandNode(path, node, !isExpanded);
+				onToggle(path, node, !isExpanded);
 			}
 			event.preventDefault();
 		} else if (event.key === 'Enter') {
@@ -719,7 +684,6 @@ const NodeRow: React.FC<{
 			onRenameCancel?.(path);
 			return;
 		}
-		// Allow text navigation with arrow keys while renaming – prevent tree navigation
 		if (
 			event.key === 'ArrowLeft' ||
 			event.key === 'ArrowRight' ||
@@ -832,14 +796,13 @@ const NodeRow: React.FC<{
 						position={index + 1}
 						setSize={resolvedChildren.length}
 						expandedNodePaths={expandedNodePaths}
-						expandNode={expandNode}
-						selectPath={selectPath}
+						onToggle={onToggle}
 						selectedNode={selectedNode}
 						focusPath={focusPath}
 						focusedNode={focusedNode}
+						selectPath={selectPath}
 						generatePath={generatePath}
 						getChildren={getChildren}
-						loadingPaths={loadingPaths}
 						onContextMenu={onContextMenu}
 						renamingPath={renamingPath}
 						onRename={onRename}

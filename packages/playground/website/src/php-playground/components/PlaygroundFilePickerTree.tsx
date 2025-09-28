@@ -1,4 +1,3 @@
-/* eslint-disable react-hooks/exhaustive-deps */
 import React, {
 	forwardRef,
 	useCallback,
@@ -8,10 +7,12 @@ import React, {
 	useRef,
 	useState,
 } from 'react';
-import type { FileNode } from '@wp-playground/components';
+import type { FileNode, FilePickerTreeHandle } from '@wp-playground/components';
 import { FilePickerTree as CoreFilePickerTree } from '@wp-playground/components';
 import type { PlaygroundClient } from '@wp-playground/client';
 import styles from './layout.module.css';
+import saveAs from 'file-saver';
+import { zipDirectory } from '@wp-playground/common';
 import { useAppDispatch, useAppSelector } from '../hooks';
 import { setCode, setCurrentPath } from '../store';
 
@@ -128,9 +129,12 @@ const PlaygroundFilePickerTree = forwardRef<
 		() => getBaseName(normalizedRoot),
 		[normalizedRoot]
 	);
+	const excludePathsKey = useMemo(
+		() => JSON.stringify(excludePaths ?? []),
+		[excludePaths]
+	);
 
 	const [files, setFiles] = useState<FileNode[]>([]);
-	const [isRootLoading, setIsRootLoading] = useState(false);
 	const [contextMenu, setContextMenu] = useState<{
 		path: string;
 		type: 'file' | 'folder';
@@ -140,30 +144,52 @@ const PlaygroundFilePickerTree = forwardRef<
 	const [localRenamingPath, setLocalRenamingPath] = useState<string | null>(
 		null
 	);
-	const [invalidatePath, setInvalidatePath] = useState<string | null>(null);
-	const [invalidateKey, setInvalidateKey] = useState(0);
-	const [renameMapping, setRenameMapping] = useState<{
-		from: string;
-		to: string;
-	} | null>(null);
-	const [renameKey, setRenameKey] = useState(0);
-	const [focusRequestPath, setFocusRequestPath] = useState<string | null>(
-		null
-	);
-	const [focusRequestKey, setFocusRequestKey] = useState(0);
-	const [expandRequestPath, setExpandRequestPath] = useState<string | null>(
-		null
-	);
-	const [expandRequestKey, setExpandRequestKey] = useState(0);
+	const treeRef = useRef<FilePickerTreeHandle>(null);
 	const pendingCreateRef = useRef<{
 		type: 'file' | 'folder';
 		tempPath: string;
 	} | null>(null);
+	const isMountedRef = useRef(true);
 	const [lastSelectedPath, setLastSelectedPath] = useState<string | null>(
 		initialPath ?? DEFAULT_WORKSPACE_DIR
 	);
 	const dispatch = useAppDispatch();
 	const currentPath = useAppSelector((state) => state.playground.currentPath);
+
+	const reloadRoot = useCallback(async () => {
+		if (normalizedRoot !== '/') {
+			if (!isMountedRef.current) return;
+			setFiles([{ name: rootName, type: 'folder' } as FileNode]);
+			return;
+		}
+		if (!playgroundClient) {
+			if (!isMountedRef.current) return;
+			setFiles([]);
+			return;
+		}
+		try {
+			const entries = await listDir(playgroundClient, '/');
+			const excludeSet = new Set(excludePaths ?? []);
+			const filtered = entries.filter((item) => {
+				const childAbs = `/${item.name}`;
+				return !excludeSet.has(childAbs);
+			});
+			const ordered = prioritizeRenaming(filtered, '/');
+			if (isMountedRef.current) {
+				setFiles(ordered as FileNode[]);
+			}
+		} catch {
+			if (isMountedRef.current) {
+				setFiles([]);
+			}
+		}
+	}, [excludePathsKey, normalizedRoot, playgroundClient, rootName]);
+
+	useEffect(() => {
+		return () => {
+			isMountedRef.current = false;
+		};
+	}, []);
 
 	const getDirname = useCallback((path: string) => {
 		const p = normalizePath(path);
@@ -202,52 +228,19 @@ const PlaygroundFilePickerTree = forwardRef<
 		[renamingPath, getDirname, getBasename]
 	);
 
-	// Track when we need to refresh root files
-	const [rootRefreshKey, setRootRefreshKey] = useState(0);
+	const toCore = useCallback(
+		(path: string) => toCorePath(path, normalizedRoot),
+		[normalizedRoot]
+	);
 
 	useEffect(() => {
-		let cancelled = false;
-		async function init() {
-			if (normalizedRoot === '/') {
-				setIsRootLoading(true);
-				if (!playgroundClient) {
-					if (!cancelled) setFiles([]);
-					setIsRootLoading(false);
-					return;
-				}
-				const items = await listDir(playgroundClient, '/');
-				const filtered = items.filter((item) => {
-					const childAbs = `/${item.name}`;
-					return !excludePaths?.includes(childAbs);
-				});
-				const ordered = prioritizeRenaming(filtered, '/');
-				if (!cancelled) setFiles(ordered as FileNode[]);
-				setIsRootLoading(false);
-			} else {
-				if (!cancelled)
-					setFiles([
-						{ name: rootName, type: 'folder' },
-					] as FileNode[]);
-				setIsRootLoading(false);
-			}
-		}
-		init();
-		return () => {
-			cancelled = true;
-		};
-	}, [
-		normalizedRoot,
-		rootName,
-		playgroundClient,
-		JSON.stringify(excludePaths),
-		rootRefreshKey,
-	]);
+		void reloadRoot();
+	}, [reloadRoot]);
 
-	const coreInitialPath = useMemo(() => {
-		return initialPath
-			? toCorePath(initialPath, normalizedRoot)
-			: undefined;
-	}, [initialPath, normalizedRoot]);
+	const coreInitialPath = useMemo(
+		() => (initialPath ? toCore(initialPath) : undefined),
+		[initialPath, toCore]
+	);
 
 	// Dismiss context menu on outside interactions / ESC key
 	useEffect(() => {
@@ -287,120 +280,111 @@ const PlaygroundFilePickerTree = forwardRef<
 		[playgroundClient, normalizedRoot, excludePaths, prioritizeRenaming]
 	);
 
-	const handleSelect = useCallback(
-		(path: string) => {
-			const normalized = normalizePath(path);
-			setLastSelectedPath(normalized);
-			if (onSelect) onSelect(normalized);
-		},
-		[onSelect]
-	);
+	const handleSelect = (path: string) => {
+		const normalized = normalizePath(path);
+		setLastSelectedPath(normalized);
+		if (onSelect) onSelect(normalized);
+	};
 
 	const effectiveRenamingPath = useMemo(() => {
 		return renamingPath ?? localRenamingPath ?? undefined;
 	}, [renamingPath, localRenamingPath]);
 
-	const handleInternalContextMenu = useCallback(
-		(event: React.MouseEvent, node: FileNode, corePath: string) => {
-			event.preventDefault();
-			event.stopPropagation();
-			const absPath = corePathToAbsolute(corePath, normalizedRoot);
-			setLocalRenamingPath(null);
-			setContextMenu({
-				path: absPath,
-				type: node.type,
-				x: event.clientX,
-				y: event.clientY,
-			});
-			if (onContextMenu) {
-				onContextMenu(event, node, absPath);
-			}
-		},
-		[normalizedRoot, onContextMenu]
-	);
+	const handleInternalContextMenu = (
+		event: React.MouseEvent,
+		node: FileNode,
+		corePath: string
+	) => {
+		event.preventDefault();
+		event.stopPropagation();
+		const absPath = corePathToAbsolute(corePath, normalizedRoot);
+		setLocalRenamingPath(null);
+		setContextMenu({
+			path: absPath,
+			type: node.type,
+			x: event.clientX,
+			y: event.clientY,
+		});
+		if (onContextMenu) {
+			onContextMenu(event, node, absPath);
+		}
+	};
 
-	const handleContextMenuRename = useCallback((targetPath: string) => {
+	const handleContextMenuRename = (targetPath: string) => {
 		setContextMenu(null);
 		setLocalRenamingPath(targetPath);
-	}, []);
+	};
 
 	// dirname helper not needed in this component
 
-	const findAvailableName = useCallback(
-		async (client: PlaygroundClient, baseDir: string, baseName: string) => {
-			let name = baseName;
-			let counter = 0;
-			const splitExt = (n: string) => {
-				const dot = n.lastIndexOf('.');
-				if (dot > 0) {
-					return { stem: n.slice(0, dot), ext: n.slice(dot) };
-				}
-				return { stem: n, ext: '' };
-			};
-			const prefix = baseDir === '/' ? '' : baseDir;
-			while (
-				(await client
-					.fileExists(`${prefix}/${name}`)
-					.catch(() => false)) ||
-				(await client.isDir(`${prefix}/${name}`).catch(() => false))
-			) {
-				counter += 1;
-				const { stem, ext } = splitExt(baseName);
-				name = `${stem} (${counter})${ext}`;
+	const findAvailableName = async (
+		client: PlaygroundClient,
+		baseDir: string,
+		baseName: string
+	) => {
+		let name = baseName;
+		let counter = 0;
+		const splitExt = (n: string) => {
+			const dot = n.lastIndexOf('.');
+			if (dot > 0) {
+				return { stem: n.slice(0, dot), ext: n.slice(dot) };
 			}
-			return name;
-		},
-		[]
-	);
+			return { stem: n, ext: '' };
+		};
+		const prefix = baseDir === '/' ? '' : baseDir;
+		while (
+			(await client.fileExists(`${prefix}/${name}`).catch(() => false)) ||
+			(await client.isDir(`${prefix}/${name}`).catch(() => false))
+		) {
+			counter += 1;
+			const { stem, ext } = splitExt(baseName);
+			name = `${stem} (${counter})${ext}`;
+		}
+		return name;
+	};
 
-	const resolveBaseDir = useCallback(
-		(overridePath?: string) => {
-			const basePath = overridePath || lastSelectedPath;
-			if (!basePath) return DEFAULT_WORKSPACE_DIR;
-			// If selection is a folder, use it; otherwise use its dirname
-			return basePath;
-		},
-		[lastSelectedPath]
-	);
+	const resolveBaseDir = (overridePath?: string) => {
+		const basePath = overridePath || lastSelectedPath;
+		if (!basePath) return DEFAULT_WORKSPACE_DIR;
+		// If selection is a folder, use it; otherwise use its dirname
+		return basePath;
+	};
 
-	const handleCreateFile = useCallback(
-		async (targetDir?: string) => {
-			if (!playgroundClient) {
-				return;
-			}
-			const baseDir = resolveBaseDir(targetDir) || DEFAULT_WORKSPACE_DIR;
-			const normalizedBase = normalizePath(baseDir);
-			try {
-				const name = await findAvailableName(
-					playgroundClient,
-					normalizedBase,
-					'untitled.php'
-				);
-				const tempPath = `${
-					normalizedBase === '/' ? '' : normalizedBase
-				}/${name}`;
-				await playgroundClient.writeFile(tempPath, '');
-				pendingCreateRef.current = { type: 'file', tempPath };
-				setLocalRenamingPath(tempPath);
-				setLastSelectedPath(tempPath);
-				setInvalidatePath(normalizedBase);
-				setInvalidateKey((k) => k + 1);
-				// Ensure the base directory is expanded and focused so the form is visible
-				setExpandRequestPath(normalizedBase);
-				setExpandRequestKey((k) => k + 1);
-				setFocusRequestPath(tempPath);
-				setFocusRequestKey((k) => k + 1);
-				// Clear requests after a short delay
+	const handleCreateFile = async (targetDir?: string) => {
+		if (!playgroundClient) {
+			return;
+		}
+		const baseDir = resolveBaseDir(targetDir) || DEFAULT_WORKSPACE_DIR;
+		const normalizedBase = normalizePath(baseDir);
+		try {
+			const name = await findAvailableName(
+				playgroundClient,
+				normalizedBase,
+				'untitled.php'
+			);
+			const tempPath = `${
+				normalizedBase === '/' ? '' : normalizedBase
+			}/${name}`;
+			await playgroundClient.writeFile(tempPath, '');
+			pendingCreateRef.current = { type: 'file', tempPath };
+			setLocalRenamingPath(tempPath);
+			setLastSelectedPath(tempPath);
+			const coreBase = toCore(normalizedBase);
+			const coreTemp = toCore(tempPath);
+			if (normalizedRoot === '/' && normalizedBase === '/') {
+				await reloadRoot();
 				setTimeout(() => {
-					setExpandRequestPath(null);
-					setFocusRequestPath(null);
-				}, 100);
-			} catch (e) {
-				void e;
+					treeRef.current?.focusPath(coreTemp, { notify: false });
+				}, 0);
+			} else if (treeRef.current) {
+				await treeRef.current.expandToPath(coreBase);
+				await treeRef.current.refresh(coreBase);
+				treeRef.current.focusPath(coreTemp, { notify: false });
 			}
-		},
-		[playgroundClient, resolveBaseDir, findAvailableName]
-	);
+		} catch (e) {
+			void e;
+		}
+	};
 
 	const handleCreateDirectory = useCallback(
 		async (targetDir?: string) => {
@@ -422,23 +406,30 @@ const PlaygroundFilePickerTree = forwardRef<
 				pendingCreateRef.current = { type: 'folder', tempPath };
 				setLocalRenamingPath(tempPath);
 				setLastSelectedPath(tempPath);
-				setInvalidatePath(normalizedBase);
-				setInvalidateKey((k) => k + 1);
-				// Ensure the base directory is expanded and focused so the form is visible
-				setExpandRequestPath(normalizedBase);
-				setExpandRequestKey((k) => k + 1);
-				setFocusRequestPath(tempPath);
-				setFocusRequestKey((k) => k + 1);
-				// Clear requests after a short delay
-				setTimeout(() => {
-					setExpandRequestPath(null);
-					setFocusRequestPath(null);
-				}, 100);
+				const coreBase = toCore(normalizedBase);
+				const coreTemp = toCore(tempPath);
+				if (normalizedRoot === '/' && normalizedBase === '/') {
+					await reloadRoot();
+					setTimeout(() => {
+						treeRef.current?.focusPath(coreTemp, { notify: false });
+					}, 0);
+				} else if (treeRef.current) {
+					await treeRef.current.expandToPath(coreBase);
+					await treeRef.current.refresh(coreBase);
+					treeRef.current.focusPath(coreTemp, { notify: false });
+				}
 			} catch (e) {
 				void e;
 			}
 		},
-		[playgroundClient, resolveBaseDir, findAvailableName]
+		[
+			findAvailableName,
+			normalizedRoot,
+			playgroundClient,
+			reloadRoot,
+			resolveBaseDir,
+			toCore,
+		]
 	);
 
 	useImperativeHandle(
@@ -470,20 +461,21 @@ const PlaygroundFilePickerTree = forwardRef<
 			} finally {
 				setLocalRenamingPath(null);
 				const parentDir = getDirname(normalized);
-				if (parentDir === normalizedRoot && normalizedRoot === '/') {
-					// Special case: deleting at root level, refresh root files
-					setRootRefreshKey((k) => k + 1);
-				} else {
-					setInvalidatePath(parentDir);
-					setInvalidateKey((k) => k + 1);
+				setLastSelectedPath(parentDir);
+				const coreParent = toCore(parentDir);
+				if (normalizedRoot === '/' && parentDir === '/') {
+					await reloadRoot();
+					if (coreParent) {
+						setTimeout(() => {
+							treeRef.current?.focusPath(coreParent, {
+								notify: false,
+							});
+						}, 0);
+					}
+				} else if (treeRef.current) {
+					await treeRef.current.refresh(coreParent);
+					treeRef.current.focusPath(coreParent, { notify: false });
 				}
-				// Focus on the parent directory after deletion
-				setFocusRequestPath(parentDir);
-				setFocusRequestKey((k) => k + 1);
-				// Clear focus request after a short delay
-				setTimeout(() => {
-					setFocusRequestPath(null);
-				}, 100);
 				// Clear editor if deleted current file or a parent directory
 				if (
 					currentPath &&
@@ -495,7 +487,15 @@ const PlaygroundFilePickerTree = forwardRef<
 				}
 			}
 		},
-		[playgroundClient, currentPath, dispatch]
+		[
+			currentPath,
+			dispatch,
+			getDirname,
+			normalizedRoot,
+			playgroundClient,
+			reloadRoot,
+			toCore,
+		]
 	);
 
 	const handleDownloadPath = useCallback(
@@ -505,21 +505,23 @@ const PlaygroundFilePickerTree = forwardRef<
 			}
 			setContextMenu(null);
 			try {
-				const content = await playgroundClient.readFileAsText(
-					targetPath
+				const normalized = normalizePath(targetPath);
+				const baseName = normalized.split('/').pop() || 'download';
+				const isDir = await playgroundClient
+					.isDir(normalized)
+					.catch(() => false);
+				if (isDir) {
+					const bytes = await zipDirectory(
+						playgroundClient as any,
+						normalized
+					);
+					saveAs(new File([bytes], `${baseName}.zip`));
+					return;
+				}
+				const data = await playgroundClient.readFileAsBuffer(
+					normalized
 				);
-				const blob = new Blob([content], {
-					type: 'text/plain;charset=utf-8',
-				});
-				const url = URL.createObjectURL(blob);
-				const link = document.createElement('a');
-				link.href = url;
-				link.download =
-					normalizePath(targetPath).split('/').pop() || 'download';
-				document.body.appendChild(link);
-				link.click();
-				link.remove();
-				URL.revokeObjectURL(url);
+				saveAs(new File([data], baseName));
 			} catch {
 				// Ignore failure
 			}
@@ -544,50 +546,17 @@ const PlaygroundFilePickerTree = forwardRef<
 	return (
 		<>
 			<CoreFilePickerTree
+				ref={treeRef}
 				files={files}
 				initialPath={coreInitialPath}
 				onSelect={handleSelect}
 				onLoadChildren={handleLoadChildren}
-				isLoading={normalizedRoot === '/' && isRootLoading}
 				autoFocus={false}
 				renamingPath={
 					effectiveRenamingPath
-						? toCorePath(effectiveRenamingPath, normalizedRoot)
+						? toCore(effectiveRenamingPath)
 						: undefined
 				}
-				invalidatePath={
-					invalidatePath
-						? toCorePath(invalidatePath, normalizedRoot)
-						: undefined
-				}
-				invalidateKey={invalidateKey}
-				renameMapping={
-					renameMapping
-						? {
-								from: toCorePath(
-									renameMapping.from,
-									normalizedRoot
-								),
-								to: toCorePath(
-									renameMapping.to,
-									normalizedRoot
-								),
-						  }
-						: undefined
-				}
-				renameKey={renameKey}
-				focusPathRequest={
-					focusRequestPath
-						? toCorePath(focusRequestPath, normalizedRoot)
-						: undefined
-				}
-				focusRequestKey={focusRequestKey}
-				expandPathRequest={
-					expandRequestPath
-						? toCorePath(expandRequestPath, normalizedRoot)
-						: undefined
-				}
-				expandRequestKey={expandRequestKey}
 				onRename={async (corePath, newName) => {
 					if (!playgroundClient) return;
 					const absPath = corePathToAbsolute(
@@ -597,6 +566,8 @@ const PlaygroundFilePickerTree = forwardRef<
 					const pending = pendingCreateRef.current;
 					const isPending = pending?.tempPath === absPath;
 					const parent = getDirname(absPath);
+					const coreParent = toCore(parent);
+					const coreOriginal = toCore(absPath);
 					const sanitized = (newName || '').trim();
 					if (!isValidNameSegment(sanitized)) {
 						if (isPending) {
@@ -619,15 +590,31 @@ const PlaygroundFilePickerTree = forwardRef<
 
 					const composePath = (name: string) =>
 						parent === '/' ? `/${name}` : `${parent}/${name}`;
-					const finalName = sanitized;
-					let candidate = composePath(finalName);
-					const candidateNormalized = normalizePath(candidate);
+					let candidate = composePath(sanitized);
+					let candidateNormalized = normalizePath(candidate);
 					if (candidateNormalized === absPath) {
 						setLocalRenamingPath(null);
 						if (isPending) {
 							pendingCreateRef.current = null;
 						}
 						setLastSelectedPath(candidateNormalized);
+						const coreCandidateSame = toCore(candidateNormalized);
+						if (coreCandidateSame) {
+							if (normalizedRoot === '/' && parent === '/') {
+								setTimeout(() => {
+									treeRef.current?.focusPath(
+										coreCandidateSame,
+										{
+											notify: false,
+										}
+									);
+								}, 0);
+							} else {
+								treeRef.current?.focusPath(coreCandidateSame, {
+									notify: false,
+								});
+							}
+						}
 						return;
 					}
 
@@ -646,9 +633,10 @@ const PlaygroundFilePickerTree = forwardRef<
 								const unique = await findAvailableName(
 									playgroundClient,
 									parent === '/' ? '/' : parent,
-									finalName
+									sanitized
 								);
 								candidate = composePath(unique);
+								candidateNormalized = normalizePath(candidate);
 							} catch (e) {
 								void e;
 							}
@@ -658,6 +646,7 @@ const PlaygroundFilePickerTree = forwardRef<
 						}
 					}
 
+					const coreCandidate = toCore(candidateNormalized);
 					let candidateIsDir = pending?.type === 'folder';
 					try {
 						await playgroundClient.mv(absPath, candidate as any);
@@ -667,26 +656,24 @@ const PlaygroundFilePickerTree = forwardRef<
 								.catch(() => false);
 							candidateIsDir = isDir;
 						}
-						setLastSelectedPath(candidate);
-						// If a directory was renamed and it was expanded, remap it to keep expanded state
-						if (candidateIsDir) {
-							setRenameMapping({
-								from: absPath,
-								to: candidateNormalized,
-							});
-							setRenameKey((k) => k + 1);
+						setLastSelectedPath(candidateNormalized);
+						if (
+							candidateIsDir &&
+							treeRef.current &&
+							coreOriginal &&
+							coreCandidate
+						) {
+							treeRef.current.remapPath(
+								coreOriginal,
+								coreCandidate
+							);
 						}
-						// Update editor state
 						if (candidateIsDir) {
 							if (currentPath === absPath) {
 								dispatch(setCurrentPath(candidate));
 							}
-							// keep focus on the renamed directory row
-							setFocusRequestPath(candidateNormalized);
-							setFocusRequestKey((k) => k + 1);
 						} else {
 							if (isPending) {
-								// Only open the file if we just created it
 								try {
 									const newContent =
 										await playgroundClient.readFileAsText(
@@ -698,12 +685,26 @@ const PlaygroundFilePickerTree = forwardRef<
 									void e;
 								}
 							} else if (currentPath === absPath) {
-								// If the renamed file was open, just update the path
 								dispatch(setCurrentPath(candidate));
 							}
-							// keep focus on the renamed file row
-							setFocusRequestPath(candidateNormalized);
-							setFocusRequestKey((k) => k + 1);
+						}
+
+						if (normalizedRoot === '/' && parent === '/') {
+							await reloadRoot();
+							if (coreCandidate) {
+								setTimeout(() => {
+									treeRef.current?.focusPath(coreCandidate, {
+										notify: false,
+									});
+								}, 0);
+							}
+						} else if (treeRef.current) {
+							await treeRef.current.refresh(coreParent);
+							if (coreCandidate) {
+								treeRef.current.focusPath(coreCandidate, {
+									notify: false,
+								});
+							}
 						}
 					} catch {
 						if (isPending) {
@@ -722,24 +723,6 @@ const PlaygroundFilePickerTree = forwardRef<
 					} finally {
 						pendingCreateRef.current = null;
 						setLocalRenamingPath(null);
-						// Always invalidate parent to update the file list with new name
-						if (
-							parent === normalizedRoot &&
-							normalizedRoot === '/'
-						) {
-							// Special case: renaming at root level, refresh root files
-							setRootRefreshKey((k) => k + 1);
-						} else {
-							setInvalidatePath(parent);
-							setInvalidateKey((k) => k + 1);
-						}
-						// focus the renamed entry
-						setFocusRequestPath(candidateNormalized);
-						setFocusRequestKey((k) => k + 1);
-						// Clear focus request after a short delay to prevent interference
-						setTimeout(() => {
-							setFocusRequestPath(null);
-						}, 100);
 					}
 				}}
 				onRenameCancel={async (corePath) => {
@@ -768,15 +751,27 @@ const PlaygroundFilePickerTree = forwardRef<
 					}
 					pendingCreateRef.current = null;
 					setLocalRenamingPath(null);
-					setInvalidatePath(getDirname(absPath));
-					setInvalidateKey((k) => k + 1);
-					// refocus the original item (if exists) or its parent
-					setFocusRequestPath(getDirname(absPath));
-					setFocusRequestKey((k) => k + 1);
-					// Clear focus request after a short delay
-					setTimeout(() => {
-						setFocusRequestPath(null);
-					}, 100);
+					const parentDir = getDirname(absPath);
+					setLastSelectedPath(parentDir);
+					const coreParent = toCore(parentDir);
+					if (normalizedRoot === '/' && parentDir === '/') {
+						await reloadRoot();
+					} else if (treeRef.current) {
+						await treeRef.current.refresh(coreParent);
+					}
+					if (coreParent) {
+						const focusLater =
+							normalizedRoot === '/' && parentDir === '/';
+						const focusAction = () =>
+							treeRef.current?.focusPath(coreParent, {
+								notify: false,
+							});
+						if (focusLater) {
+							setTimeout(focusAction, 0);
+						} else {
+							focusAction();
+						}
+					}
 				}}
 				onContextMenu={handleInternalContextMenu}
 			/>
@@ -793,9 +788,6 @@ const PlaygroundFilePickerTree = forwardRef<
 							onClick={async () => {
 								const dir = contextMenu.path;
 								setContextMenu(null);
-								// Focus and expand the directory, then create a file inside
-								setExpandRequestPath(dir);
-								setExpandRequestKey((k) => k + 1);
 								await handleCreateFile(dir);
 							}}
 						>
@@ -808,8 +800,6 @@ const PlaygroundFilePickerTree = forwardRef<
 							onClick={async () => {
 								const dir = contextMenu.path;
 								setContextMenu(null);
-								setExpandRequestPath(dir);
-								setExpandRequestKey((k) => k + 1);
 								await handleCreateDirectory(dir);
 							}}
 						>
@@ -832,14 +822,12 @@ const PlaygroundFilePickerTree = forwardRef<
 					>
 						Delete
 					</button>
-					{contextMenu.type === 'file' && (
-						<button
-							className={styles.contextMenuButton}
-							onClick={() => handleDownloadPath(contextMenu.path)}
-						>
-							Download
-						</button>
-					)}
+					<button
+						className={styles.contextMenuButton}
+						onClick={() => handleDownloadPath(contextMenu.path)}
+					>
+						Download
+					</button>
 				</div>
 			)}
 		</>

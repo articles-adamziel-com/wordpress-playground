@@ -3,11 +3,15 @@
  *
  * * Files explorer
  *    * "Refresh" button to refresh the directory tree – OR auto-refresh every ~five seconds.
- *    * Indicate the terminal and file explorer are loading
- *    * Download file / directory action
- *    * Left/right arrows/delete don't work when renaming a file.
  *    * Bug – sometimes collapsing a directory = children are not visible after reopening.
  *      It an actual bug, not a faulty vite hot reloader!
+ *    * Ability to create top-level directories
+ *    * When I click "new file" and have a file selected, create a file in the parent
+ *      directory
+ *    * After creating and opening a file, focus the editor
+ *    * ✅ Download file / directory action
+ *    * ✅ Left/right arrows/delete don't work when renaming a file.
+ *    * ✅ Indicate the terminal and file explorer are loading
  *    * ✅ Detect when a binary file is opened, show a special message "binary file. can't
  *         edit (download)"
  *    * ✅ Create and delete files and directories.
@@ -26,11 +30,16 @@
  * * Preview
  *    * ✅ Add address bar for easy navigation
  * * Terminal
+ *    * Need to click the terminal twice to focus it
  *    * ✅ Implement cwd, cd
  *    * ✅ Communicate cwd in current prompt (like fish)
  *    * ✅ Disable terminal collapsing for now
  *
  * ------- later: -------
+ * * A "World" module for triggering syscalls such as
+ *   Filesystem interactions, spawning processes, etc.
+ *   Also a global-ish state for currently edited path
+ *   with a way to track file operations.
  * * Responsive design, useful support for mobile phones
  * * Sharing
  *    * UX for sharing more involved projects, e.g. when I edit a WordPress plugin
