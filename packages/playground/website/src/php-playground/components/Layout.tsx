@@ -13,6 +13,7 @@ import { PlaygroundManager } from './PlaygroundManager';
 import { Terminal } from './Terminal';
 import { useAppSelector } from '../hooks';
 import AddressBar from '../../components/address-bar';
+import { Spinner } from '../../components/spinner';
 
 const DEFAULT_WORKSPACE_DIR = '/wordpress/workspace';
 
@@ -82,7 +83,82 @@ export const Layout = () => {
 								forceSelectedPath={forceSelectedPath}
 								setForceSelectedPath={setForceSelectedPath}
 							/>
-						) : null}
+						) : (
+							<div className={styles.fileExplorerContainer}>
+								<div className={styles.fileExplorerHeader}>
+									<span className={styles.fileExplorerTitle}>
+										Files
+									</span>
+									<div className={styles.fileExplorerActions}>
+										<button
+											className={
+												styles.fileExplorerButton
+											}
+											disabled
+										>
+											New File
+										</button>
+										<button
+											className={
+												styles.fileExplorerButton
+											}
+											disabled
+										>
+											New Folder
+										</button>
+									</div>
+								</div>
+								<div className={styles.fileExplorerTree}>
+									<div
+										className={styles.placeholderContainer}
+										aria-live="polite"
+									>
+										<div
+											className={
+												styles.placeholderContent
+											}
+										>
+											<div
+												className={
+													styles.placeholderHeading
+												}
+											>
+												Preparing Playground…
+											</div>
+											<div
+												className={
+													styles.placeholderSubtext
+												}
+											>
+												File explorer will be ready
+												shortly
+											</div>
+											<div
+												className={styles.skeletonList}
+												aria-hidden="true"
+											>
+												<div
+													className={
+														styles.skeletonLine
+													}
+												></div>
+												<div
+													className={
+														styles.skeletonLine
+													}
+												></div>
+												<div
+													className={clsx(
+														styles.skeletonLine,
+														styles.skeletonLineShort
+													)}
+												></div>
+											</div>
+										</div>
+									</div>
+								</div>
+							</div>
+						)}
 					</div>
 				</Panel>
 				<PanelResizeHandle className={styles.horizontalHandle} />
@@ -142,6 +218,32 @@ export const Layout = () => {
 											resizeToken={terminalResizeToken}
 										/>
 									</div>
+									{bootStatus !== 'ready' ||
+									!playgroundClient ? (
+										<div
+											className={styles.terminalOverlay}
+											aria-live="polite"
+											aria-busy="true"
+										>
+											<div
+												className={
+													styles.terminalOverlayContent
+												}
+											>
+												<Spinner size={36} />
+												<div>Starting Playground…</div>
+												<div
+													style={{
+														opacity: 0.8,
+														fontSize: '12px',
+													}}
+												>
+													Terminal will be available
+													shortly
+												</div>
+											</div>
+										</div>
+									) : null}
 								</section>
 							</Panel>
 						</PanelGroup>

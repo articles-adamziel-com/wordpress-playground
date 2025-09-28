@@ -138,7 +138,7 @@ export default function FileExplorerSidebar({
 									)
 								);
 								dispatch(setCurrentPath(null));
-								setSelectedDirPath(dirnameSafe(path));
+								// Don't change selectedDirPath when clicking a file
 								return;
 							}
 							if (!isProbablyTextBuffer(data)) {
@@ -152,17 +152,17 @@ export default function FileExplorerSidebar({
 									)
 								);
 								dispatch(setCurrentPath(null));
-								setSelectedDirPath(dirnameSafe(path));
+								// Don't change selectedDirPath when clicking a file
 								return;
 							}
 							const text = new TextDecoder('utf-8').decode(data);
 							dispatch(setCode(text));
 							dispatch(setCurrentPath(path));
-							setSelectedDirPath(dirnameSafe(path));
+							// Don't change selectedDirPath when clicking a file
 						} catch {
 							dispatch(setCode('Could not open file'));
 							dispatch(setCurrentPath(null));
-							setSelectedDirPath(dirnameSafe(path));
+							// Don't change selectedDirPath when clicking a file
 						}
 					}}
 				/>

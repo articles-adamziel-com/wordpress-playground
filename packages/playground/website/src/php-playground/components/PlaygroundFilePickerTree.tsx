@@ -147,6 +147,14 @@ const PlaygroundFilePickerTree = forwardRef<
 		to: string;
 	} | null>(null);
 	const [renameKey, setRenameKey] = useState(0);
+	const [focusRequestPath, setFocusRequestPath] = useState<string | null>(
+		null
+	);
+	const [focusRequestKey, setFocusRequestKey] = useState(0);
+	const [expandRequestPath, setExpandRequestPath] = useState<string | null>(
+		null
+	);
+	const [expandRequestKey, setExpandRequestKey] = useState(0);
 	const pendingCreateRef = useRef<{
 		type: 'file' | 'folder';
 		tempPath: string;
@@ -368,6 +376,11 @@ const PlaygroundFilePickerTree = forwardRef<
 			setLastSelectedPath(tempPath);
 			setInvalidatePath(normalizedBase);
 			setInvalidateKey((k) => k + 1);
+			// Ensure the base directory is expanded and focused so the form is visible
+			setExpandRequestPath(normalizedBase);
+			setExpandRequestKey((k) => k + 1);
+			setFocusRequestPath(tempPath);
+			setFocusRequestKey((k) => k + 1);
 		} catch (e) {
 			void e;
 		}
@@ -394,6 +407,11 @@ const PlaygroundFilePickerTree = forwardRef<
 			setLastSelectedPath(tempPath);
 			setInvalidatePath(normalizedBase);
 			setInvalidateKey((k) => k + 1);
+			// Ensure the base directory is expanded and focused so the form is visible
+			setExpandRequestPath(normalizedBase);
+			setExpandRequestKey((k) => k + 1);
+			setFocusRequestPath(tempPath);
+			setFocusRequestKey((k) => k + 1);
 		} catch (e) {
 			void e;
 		}
@@ -427,8 +445,12 @@ const PlaygroundFilePickerTree = forwardRef<
 				// Ignore failure
 			} finally {
 				setLocalRenamingPath(null);
-				setInvalidatePath(getDirname(normalized));
+				const parentDir = getDirname(normalized);
+				setInvalidatePath(parentDir);
 				setInvalidateKey((k) => k + 1);
+				// Focus on the parent directory after deletion
+				setFocusRequestPath(parentDir);
+				setFocusRequestKey((k) => k + 1);
 				// Clear editor if deleted current file or a parent directory
 				if (
 					currentPath &&
@@ -521,6 +543,18 @@ const PlaygroundFilePickerTree = forwardRef<
 						: undefined
 				}
 				renameKey={renameKey}
+				focusPathRequest={
+					focusRequestPath
+						? toCorePath(focusRequestPath, normalizedRoot)
+						: undefined
+				}
+				focusRequestKey={focusRequestKey}
+				expandPathRequest={
+					expandRequestPath
+						? toCorePath(expandRequestPath, normalizedRoot)
+						: undefined
+				}
+				expandRequestKey={expandRequestKey}
 				onRename={async (corePath, newName) => {
 					if (!playgroundClient) return;
 					const absPath = corePathToAbsolute(
@@ -614,6 +648,9 @@ const PlaygroundFilePickerTree = forwardRef<
 							if (currentPath === absPath) {
 								dispatch(setCurrentPath(candidate));
 							}
+							// keep focus on the renamed directory row
+							setFocusRequestPath(candidateNormalized);
+							setFocusRequestKey((k) => k + 1);
 						} else {
 							if (isPending) {
 								// Only open the file if we just created it
@@ -631,6 +668,9 @@ const PlaygroundFilePickerTree = forwardRef<
 								// If the renamed file was open, just update the path
 								dispatch(setCurrentPath(candidate));
 							}
+							// keep focus on the renamed file row
+							setFocusRequestPath(candidateNormalized);
+							setFocusRequestKey((k) => k + 1);
 						}
 					} catch {
 						if (isPending) {
@@ -651,6 +691,9 @@ const PlaygroundFilePickerTree = forwardRef<
 						setLocalRenamingPath(null);
 						setInvalidatePath(parent);
 						setInvalidateKey((k) => k + 1);
+						// focus the renamed entry or its new parent row
+						setFocusRequestPath(candidateNormalized);
+						setFocusRequestKey((k) => k + 1);
 					}
 				}}
 				onRenameCancel={async (corePath) => {
@@ -681,6 +724,9 @@ const PlaygroundFilePickerTree = forwardRef<
 					setLocalRenamingPath(null);
 					setInvalidatePath(getDirname(absPath));
 					setInvalidateKey((k) => k + 1);
+					// refocus the original item (if exists) or its parent
+					setFocusRequestPath(getDirname(absPath));
+					setFocusRequestKey((k) => k + 1);
 				}}
 				onContextMenu={handleInternalContextMenu}
 			/>
@@ -691,6 +737,41 @@ const PlaygroundFilePickerTree = forwardRef<
 					onClick={(event) => event.stopPropagation()}
 					onContextMenu={(event) => event.preventDefault()}
 				>
+					{contextMenu.type === 'folder' && (
+						<button
+							className={styles.contextMenuButton}
+							onClick={async () => {
+								const dir = contextMenu.path;
+								setContextMenu(null);
+								// Focus and expand the directory, then create a file inside
+								setExpandRequestPath(dir);
+								setExpandRequestKey((k) => k + 1);
+								const baseBefore = lastSelectedPath;
+								setLastSelectedPath(dir);
+								await handleCreateFile();
+								setLastSelectedPath(baseBefore);
+							}}
+						>
+							Create file
+						</button>
+					)}
+					{contextMenu.type === 'folder' && (
+						<button
+							className={styles.contextMenuButton}
+							onClick={async () => {
+								const dir = contextMenu.path;
+								setContextMenu(null);
+								setExpandRequestPath(dir);
+								setExpandRequestKey((k) => k + 1);
+								const baseBefore = lastSelectedPath;
+								setLastSelectedPath(dir);
+								await handleCreateDirectory();
+								setLastSelectedPath(baseBefore);
+							}}
+						>
+							Create directory
+						</button>
+					)}
 					<button
 						className={styles.contextMenuButton}
 						onClick={() =>

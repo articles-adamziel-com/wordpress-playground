@@ -32,10 +32,48 @@ import {
 	defaultHighlightStyle,
 } from '@codemirror/language';
 import { php } from '@codemirror/lang-php';
+import { css } from '@codemirror/lang-css';
+import { javascript } from '@codemirror/lang-javascript';
+import { json } from '@codemirror/lang-json';
+import { html } from '@codemirror/lang-html';
+import { markdown } from '@codemirror/lang-markdown';
 
 import { useAppDispatch, useAppSelector } from '../hooks';
 import { queueRun, setCode } from '../store';
 import styles from './layout.module.css';
+
+// Language detection function based on file extension
+const getLanguageExtension = (filePath: string | null) => {
+	if (!filePath) {
+		return php(); // Default to PHP
+	}
+
+	const extension = filePath.split('.').pop()?.toLowerCase();
+
+	switch (extension) {
+		case 'css':
+			return css();
+		case 'js':
+		case 'jsx':
+		case 'ts':
+		case 'tsx':
+			return javascript({
+				jsx: true,
+				typescript: extension === 'ts' || extension === 'tsx',
+			});
+		case 'json':
+			return json();
+		case 'html':
+		case 'htm':
+			return html();
+		case 'md':
+		case 'markdown':
+			return markdown();
+		case 'php':
+		default:
+			return php();
+	}
+};
 
 export const EditorHost = () => {
 	const dispatch = useAppDispatch();
@@ -47,7 +85,7 @@ export const EditorHost = () => {
 	const client = useAppSelector((state) => state.playground.client);
 	const editorRef = useRef<HTMLDivElement | null>(null);
 	const viewRef = useRef<EditorView | null>(null);
-	const phpCompartmentRef = useRef(new Compartment());
+	const languageCompartmentRef = useRef(new Compartment());
 	const saveTimeoutRef = useRef<number | null>(null);
 
 	useEffect(() => {
@@ -69,7 +107,9 @@ export const EditorHost = () => {
 				dropCursor(),
 				rectangularSelection(),
 				crosshairCursor(),
-				phpCompartmentRef.current.of(php()),
+				languageCompartmentRef.current.of(
+					getLanguageExtension(currentPath)
+				),
 				syntaxHighlighting(defaultHighlightStyle),
 				indentOnInput(),
 				bracketMatching(),
@@ -128,6 +168,22 @@ export const EditorHost = () => {
 			changes: { from: 0, to: view.state.doc.length, insert: code },
 		});
 	}, [code]);
+
+	// Update language highlighting when currentPath changes
+	useEffect(() => {
+		const view = viewRef.current;
+		if (!view) {
+			return;
+		}
+
+		const newLanguageExtension = getLanguageExtension(currentPath);
+		view.dispatch({
+			effects:
+				languageCompartmentRef.current.reconfigure(
+					newLanguageExtension
+				),
+		});
+	}, [currentPath]);
 
 	// Debounced save of editor contents to the currently selected file
 	useEffect(() => {

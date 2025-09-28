@@ -42,6 +42,14 @@ export type FilePickerControlProps = {
 	renameMapping?: { from: string; to: string } | null;
 	// Optional: bump to apply a new rename mapping
 	renameKey?: number;
+	// Optional: explicitly request focusing a particular node path
+	focusPathRequest?: string | null;
+	// Optional: bump to trigger a focus request
+	focusRequestKey?: number;
+	// Optional: request expanding a particular path's ancestor chain
+	expandPathRequest?: string | null;
+	// Optional: bump to trigger an expand request
+	expandRequestKey?: number;
 };
 
 type ExpandedNodePaths = Record<string, boolean>;
@@ -64,6 +72,10 @@ export const FilePickerTree: React.FC<FilePickerControlProps> = ({
 	invalidateKey = 0,
 	renameMapping = null,
 	renameKey = 0,
+	focusPathRequest = null,
+	focusRequestKey = 0,
+	expandPathRequest = null,
+	expandRequestKey = 0,
 }) => {
 	function buildPathChain(path: string): string[] {
 		if (!path) return [];
@@ -143,11 +155,13 @@ export const FilePickerTree: React.FC<FilePickerControlProps> = ({
 		[]
 	);
 
-	// Ensure that when initialPath changes after mount, expand its chain and focus/select
+	// Only use initialPath for the initial mount to prevent flicker when switching directories
+	const hasInitializedRef = useRef(false);
 	useEffect(() => {
-		if (!initialPath) {
+		if (!initialPath || hasInitializedRef.current) {
 			return;
 		}
+		hasInitializedRef.current = true;
 		const chain = buildPathChain(initialPath);
 		setExpanded((prev) => {
 			const next = { ...prev } as ExpandedNodePaths;
@@ -309,6 +323,55 @@ export const FilePickerTree: React.FC<FilePickerControlProps> = ({
 			return mapped ?? prev;
 		});
 	}, [renameKey, renameMapping]);
+
+	// Explicit focus requests: set selection/focus and move DOM focus without relying on autoFocus
+	useEffect(() => {
+		if (!focusPathRequest) {
+			return;
+		}
+		setSelectedPath(focusPathRequest);
+		setFocusedPath(focusPathRequest);
+		const focusTarget = containerRef.current?.querySelector(
+			`[data-path="${focusPathRequest}"]`
+		) as HTMLElement | null;
+		if (focusTarget && typeof focusTarget.focus === 'function') {
+			focusTarget.focus();
+		}
+	}, [focusRequestKey, focusPathRequest, files, lazyChildren]);
+
+	// Expand request: expand the path's ancestor chain and load children in-place
+	useEffect(() => {
+		if (!expandPathRequest) {
+			return;
+		}
+		const chain = buildPathChain(expandPathRequest);
+		setExpanded((prev) => {
+			const next = { ...prev } as ExpandedNodePaths;
+			for (const p of chain) {
+				next[p] = true;
+			}
+			return next;
+		});
+		if (onLoadChildren) {
+			for (const p of chain) {
+				setLoadingPaths((prev) => ({ ...prev, [p]: true }));
+				void onLoadChildren(p)
+					.then((children) => {
+						setLazyChildren((prev) => ({
+							...prev,
+							[p]: children ?? [],
+						}));
+					})
+					.finally(() => {
+						setLoadingPaths((prev) => {
+							const next = { ...prev };
+							delete next[p];
+							return next;
+						});
+					});
+			}
+		}
+	}, [expandRequestKey, expandPathRequest, onLoadChildren]);
 
 	// Auto-expand and load the root when it is '/'
 	useEffect(() => {
@@ -654,6 +717,16 @@ const NodeRow: React.FC<{
 			event.stopPropagation();
 			renameHandledRef.current = true;
 			onRenameCancel?.(path);
+			return;
+		}
+		// Allow text navigation with arrow keys while renaming – prevent tree navigation
+		if (
+			event.key === 'ArrowLeft' ||
+			event.key === 'ArrowRight' ||
+			event.key === 'ArrowUp' ||
+			event.key === 'ArrowDown'
+		) {
+			event.stopPropagation();
 		}
 	};
 
