@@ -2,6 +2,9 @@
  * Follow-up work:
  *
  * * Files explorer
+ *    * Don't re-render (and show the loading indicator) when not needed.
+ *    * Improve visual feedback when loading files (don't replace filename with loader).
+ *    * CSS papercuts, e.g. dark font on dark background for active hovered selected files.
  *    * Detect when a binary file is opened, show a special message "binary file. can't
  *      edit (download)"
  *    * Create and delete files and directories. "Refresh" button to refresh the directory
@@ -14,8 +17,8 @@
  *    * ✅ Separate "focus" from "open" actions so that I can browse files
  *      without editing them
  * * Editor
- *    * Save changes when editing files other than code.php
- *    * Display breadcrumbs of the currently open file above the editor?
+ *    * ✅ Save changes when editing files other than code.php
+ *    * ✅ Display breadcrumbs of the currently open file above the editor?
  * * UX for sharing more involved setups, e.g. when I edit a WordPress plugin
  *   and not just the code snippet (Maybe connect GitHub and save diff in a
  *   repository or in a gist?)
@@ -31,10 +34,11 @@
  * * Terminal
  *    * Collapse/reveal UX bugs
  *    * Implement cwd, cd
- *    * ✅ Communicate cwd in current prompt (like fish)
  *    * Tab completion for paths
+ *    * Implement basic `curl` and `curl -O` and `wget` to download remote files
  *    * Implement `git clone` and `git checkout`
  *    * Implement `unzip` (via PHP `ZipArchive`)
+ *    * ✅ Communicate cwd in current prompt (like fish)
  * * Integrate with Playground.wordpress.net – bring over a tool
  *   palette (file browser, sites browser, Blueprints browser).
  * * A way to run composer install by default (simply via Blueprints?)
