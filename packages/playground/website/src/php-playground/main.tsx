@@ -3,14 +3,14 @@
  *
  * * Files explorer
  *    * Initialization UX – show the expanded path right away
- *    * Separate "focus" from "open" actions so that I can browse files
+ *    * ✅ Separate "focus" from "open" actions so that I can browse files
  *      without editing them
  *    * Detect when a binary file is opened, show a special message "binary file. can't
  *      edit (download)"
  *    * Create and delete files and directories. "Refresh" button to refresh the directory
  *      tree – OR auto-refresh every second or five seconds.
  *    * Download file / directory action
- *    * Ensure it's scrollable with overflow: auto
+ *    * ✅ Ensure it's scrollable with overflow: auto
  *    * Don't display "/", display just "home", "tmp", and "wordpress" directly
  * * Editor
  *    * Save changes when editing files other than code.php
@@ -30,9 +30,10 @@
  * * Terminal
  *    * Collapse/reveal UX bugs
  *    * Implement cwd, cd
- *    * Communicate cwd in current prompt (like fish)
+ *    * ✅ Communicate cwd in current prompt (like fish)
  *    * Tab completion for paths
  *    * Implement `git clone` and `git checkout`
+ *    * Implement `unzip` (via PHP `ZipArchive`)
  * * Integrate with Playground.wordpress.net – bring over a tool
  *   palette (file browser, sites browser, Blueprints browser).
  * * A way to run composer install by default (simply via Blueprints?)

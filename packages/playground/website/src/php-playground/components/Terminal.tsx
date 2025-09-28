@@ -1,11 +1,17 @@
 import { useEffect, useRef } from 'react';
-import { splitShellCommand } from '@php-wasm/util';
+import {
+	basename,
+	joinPaths,
+	normalizePath,
+	splitShellCommand,
+} from '@php-wasm/util';
 import { Terminal as XTerm } from 'xterm';
 import { FitAddon } from 'xterm-addon-fit';
 
 import { playgroundRuntime } from '../runtime';
 import styles from './layout.module.css';
 import 'xterm/css/xterm.css';
+import type { StreamedPHPResponse } from '@php-wasm/universal';
 
 const PROGRESS_BAR_WIDTH = 28;
 const SPINNER_FRAMES = ['-', '\\', '|', '/'];
@@ -20,6 +26,7 @@ interface DownloadProgress {
 
 interface TerminalProps {
 	isCollapsed: boolean;
+	resizeToken?: number;
 }
 
 const formatBytes = (bytes: number) => {
@@ -60,7 +67,7 @@ const drawProgress = (term: XTerm, progress: DownloadProgress) => {
 	progress.lastRenderedLength = padLength;
 };
 
-export const Terminal = ({ isCollapsed }: TerminalProps) => {
+export const Terminal = ({ isCollapsed, resizeToken = 0 }: TerminalProps) => {
 	const terminalContainerRef = useRef<HTMLDivElement | null>(null);
 	const fitAddonRef = useRef<FitAddon | null>(null);
 	const progressRef = useRef<DownloadProgress | null>(null);
@@ -92,6 +99,52 @@ export const Terminal = ({ isCollapsed }: TerminalProps) => {
 			}
 		});
 
+		const viewport = container.querySelector(
+			'.xterm-viewport'
+		) as HTMLElement | null;
+		let shouldStickToBottom = true;
+		const updateStickiness = () => {
+			if (!viewport) {
+				return;
+			}
+			const { scrollTop, clientHeight, scrollHeight } = viewport;
+			shouldStickToBottom =
+				scrollHeight - (scrollTop + clientHeight) <= 4;
+		};
+		viewport?.addEventListener('scroll', updateStickiness);
+
+		const autoScroll = () => {
+			if (!shouldStickToBottom) {
+				return;
+			}
+			requestAnimationFrame(() => {
+				try {
+					term.scrollToBottom();
+				} catch {
+					/* ignore errors */
+				}
+			});
+		};
+
+		const DEFAULT_CWD = '/wordpress';
+		let currentWorkingDirectory = DEFAULT_CWD;
+		const promptPrefix = () => {
+			const dirName = basename(currentWorkingDirectory) || '/';
+			return `(${dirName}) $ `;
+		};
+		const resolvePath = (target: string) => {
+			if (!target || target === '~') {
+				return DEFAULT_CWD;
+			}
+			if (target.startsWith('~/')) {
+				target = joinPaths(DEFAULT_CWD, target.slice(2));
+			}
+			const rawPath = target.startsWith('/')
+				? target
+				: joinPaths(currentWorkingDirectory, target);
+			return normalizePath(rawPath || '/');
+		};
+
 		const startDownloadProgress = (label: string, totalBytes: number) => {
 			progressRef.current = {
 				label,
@@ -102,6 +155,7 @@ export const Terminal = ({ isCollapsed }: TerminalProps) => {
 			};
 			term.writeln('');
 			drawProgress(term, progressRef.current);
+			autoScroll();
 		};
 
 		const updateDownloadProgress = (
@@ -131,11 +185,13 @@ export const Terminal = ({ isCollapsed }: TerminalProps) => {
 			term.writeln('');
 			term.writeln(`${progressRef.current.label}: ${message}`);
 			progressRef.current = null;
+			autoScroll();
 		};
 
 		const failDownloadProgress = (message: string) => {
 			if (!progressRef.current) {
 				term.writeln(message);
+				autoScroll();
 				return;
 			}
 			const failureLine = `${progressRef.current.label}: failed`;
@@ -147,14 +203,17 @@ export const Terminal = ({ isCollapsed }: TerminalProps) => {
 			term.writeln('');
 			term.writeln(message);
 			progressRef.current = null;
+			autoScroll();
 		};
 
 		const prompt = (newLine = true) => {
-			term.write(newLine ? '\r\n$ ' : '$ ');
+			term.write(newLine ? `\r\n${promptPrefix()}` : promptPrefix());
+			autoScroll();
 		};
 
 		const refreshInputLine = (currentLine: string) => {
-			term.write(`\r\x1b[2K$ ${currentLine}`);
+			term.write(`\r\x1b[2K${promptPrefix()}${currentLine}`);
+			autoScroll();
 		};
 
 		const writeStdout = (text: string) => {
@@ -162,6 +221,7 @@ export const Terminal = ({ isCollapsed }: TerminalProps) => {
 				return;
 			}
 			term.write(text.replace(/\r?\n/g, '\r\n'));
+			autoScroll();
 		};
 
 		const writeStderr = (text: string) => {
@@ -169,11 +229,13 @@ export const Terminal = ({ isCollapsed }: TerminalProps) => {
 				return;
 			}
 			term.write(`\u001b[31m${text.replace(/\r?\n/g, '\r\n')}\u001b[0m`);
+			autoScroll();
 		};
 
 		term.writeln(
 			'WordPress Playground CLI ready. Type `help` to see available commands.'
 		);
+		autoScroll();
 		prompt(false);
 
 		const downloadWithProgress = async (url: string, label: string) => {
@@ -239,6 +301,7 @@ export const Terminal = ({ isCollapsed }: TerminalProps) => {
 				return;
 			}
 			term.writeln('\r\nPreparing WP-CLI...');
+			autoScroll();
 			const binary = await downloadWithProgress(
 				'https://raw.githubusercontent.com/wp-cli/builds/gh-pages/phar/wp-cli.phar',
 				'WP-CLI download'
@@ -253,6 +316,7 @@ export const Terminal = ({ isCollapsed }: TerminalProps) => {
 				return;
 			}
 			term.writeln('\r\nPreparing Composer...');
+			autoScroll();
 			const binary = await downloadWithProgress(
 				'https://wordpress-playground-cors-proxy.net/?https://getcomposer.org/download/2.8.12/composer.phar',
 				'Composer download'
@@ -277,110 +341,112 @@ require_once __FILE__ . '.bin';
 			options: { env?: Record<string, string> } = {}
 		) => {
 			const client = await ensureBootReady();
-			const requestHandler = client.__internal_getRequestHandler?.();
-			const processManager = requestHandler?.processManager;
-			const { php, reap } = processManager
-				? await processManager.acquirePHPInstance()
-				: { php: await client.__internal_getPHP?.(), reap: () => {} };
-			try {
-				const response = await php.cli(argv, options);
-				const stdoutReader = response.stdout.getReader();
-				const stderrReader = response.stderr.getReader();
-				const stdoutDecoder = new TextDecoder();
-				const stderrDecoder = new TextDecoder();
-				let aborted = false;
-				const activeProcess = {
-					async terminate() {
-						if (aborted) {
-							return;
-						}
-						aborted = true;
-						try {
-							await stdoutReader.cancel();
-						} catch {
-							/* ignore errors */
-						}
-						try {
-							await stderrReader.cancel();
-						} catch {
-							/* ignore errors */
-						}
-						try {
-							php.exit(130);
-						} catch {
-							/* ignore errors */
-						}
-					},
-				};
-				currentProcess = activeProcess;
-
-				const streamStdout = (async () => {
+			const response = (await client.cli(
+				argv,
+				options
+			)) as StreamedPHPResponse & {
+				terminate?: () => Promise<void> | void;
+			};
+			const stdoutReader = response.stdout.getReader();
+			const stderrReader = response.stderr.getReader();
+			const stdoutDecoder = new TextDecoder();
+			const stderrDecoder = new TextDecoder();
+			const terminateResponse =
+				typeof response.terminate === 'function'
+					? async () => {
+							try {
+								await response.terminate!();
+							} catch {
+								/* ignore errors */
+							}
+					  }
+					: null;
+			let aborted = false;
+			const activeProcess = {
+				async terminate() {
+					if (aborted) {
+						return;
+					}
+					aborted = true;
 					try {
-						while (!aborted) {
-							const { value, done } = await stdoutReader.read();
-							if (done) {
-								break;
-							}
-							if (value) {
-								const text = stdoutDecoder.decode(value, {
-									stream: true,
-								});
-								writeStdout(text);
-							}
-						}
-						const flush = stdoutDecoder.decode();
-						writeStdout(flush);
-					} catch (error) {
-						if (!aborted) {
-							throw error;
-						}
+						await stdoutReader.cancel();
+					} catch {
+						/* ignore errors */
 					}
-				})();
-
-				const streamStderr = (async () => {
 					try {
-						while (!aborted) {
-							const { value, done } = await stderrReader.read();
-							if (done) {
-								break;
-							}
-							if (value) {
-								const text = stderrDecoder.decode(value, {
-									stream: true,
-								});
-								writeStderr(text);
-							}
+						await stderrReader.cancel();
+					} catch {
+						/* ignore errors */
+					}
+					if (terminateResponse) {
+						await terminateResponse();
+					}
+				},
+			};
+			currentProcess = activeProcess;
+
+			const streamStdout = (async () => {
+				try {
+					while (!aborted) {
+						const { value, done } = await stdoutReader.read();
+						if (done) {
+							break;
 						}
-						const flush = stderrDecoder.decode();
-						writeStderr(flush);
-					} catch (error) {
-						if (!aborted) {
-							throw error;
+						if (value) {
+							const text = stdoutDecoder.decode(value, {
+								stream: true,
+							});
+							writeStdout(text);
 						}
 					}
-				})();
-
-				const exitCodePromise = response.exitCode.catch(
-					(error: any) => {
-						if (!aborted) {
-							throw error;
-						}
-						return 130;
+					const flush = stdoutDecoder.decode();
+					writeStdout(flush);
+				} catch (error) {
+					if (!aborted) {
+						throw error;
 					}
-				);
+				}
+			})();
 
-				exitCodePromise.finally(() => reap());
+			const streamStderr = (async () => {
+				try {
+					while (!aborted) {
+						const { value, done } = await stderrReader.read();
+						if (done) {
+							break;
+						}
+						if (value) {
+							const text = stderrDecoder.decode(value, {
+								stream: true,
+							});
+							writeStderr(text);
+						}
+					}
+					const flush = stderrDecoder.decode();
+					writeStderr(flush);
+				} catch (error) {
+					if (!aborted) {
+						throw error;
+					}
+				}
+			})();
 
-				const [, , exitCode] = await Promise.all([
-					streamStdout.catch(() => {}),
-					streamStderr.catch(() => {}),
-					exitCodePromise,
-				]);
+			const exitCodePromise = response.exitCode.catch((error: any) => {
+				if (!aborted) {
+					throw error;
+				}
+				return 130;
+			});
 
-				return { exitCode, aborted };
-			} finally {
-				currentProcess = null;
-			}
+			const [, , exitCode] = await Promise.all([
+				streamStdout.catch(() => {}),
+				streamStderr.catch(() => {}),
+				exitCodePromise,
+			]);
+
+			prompt();
+
+			return { exitCode, aborted };
 		};
 
 		const commandHistory: string[] = [];
@@ -405,22 +471,36 @@ require_once __FILE__ . '.bin';
 			}
 
 			const [command, ...args] = parts;
+			let commandPrompted = false;
 			try {
 				if (command === 'help') {
 					term.writeln(
-						'\r\nAvailable commands:\r\n  help        Show this message\r\n  php <...>  Run PHP CLI arguments\r\n  wp <...>   Run WP-CLI (auto-downloads if needed)\r\n  composer <...>  Run Composer (auto-downloads if needed)'
+						'\r\nAvailable commands:\r\n  help        Show this message\r\n  php <...>  Run PHP CLI arguments\r\n  wp <...>   Run WP-CLI (auto-downloads if needed)\r\n  composer <...>  Run Composer (auto-downloads if needed)\r\n  cd <path>  Change directory (only affects prompt)'
 					);
-				} else if (command === 'php') {
-					if (!args.length) {
-						term.writeln('\r\nUsage: php <arguments>');
-					} else {
-						const result = await runCli(['php', ...args]);
-						if (!result.aborted && result.exitCode !== 0) {
-							term.writeln(
-								`\r\nProcess exited with code ${result.exitCode}`
-							);
-						}
+					autoScroll();
+					prompt();
+					commandPrompted = true;
+				} else if (command === 'cd') {
+					const target = args[0] ?? '';
+					const client = await ensureBootReady();
+					const resolvedPath = resolvePath(target);
+					let isDirectory = false;
+					try {
+						isDirectory = client.isDir(resolvedPath);
+					} catch {
+						isDirectory = false;
 					}
+					if (!isDirectory) {
+						const message = target || resolvedPath;
+						term.writeln(
+							`\r\ncd: no such file or directory: ${message}`
+						);
+						autoScroll();
+					} else {
+						currentWorkingDirectory = resolvedPath;
+					}
+					prompt();
+					commandPrompted = true;
 				} else if (command === 'wp') {
 					await ensureWpCliBinary();
 					const result = await runCli([
@@ -433,7 +513,9 @@ require_once __FILE__ . '.bin';
 						term.writeln(
 							`\r\nProcess exited with code ${result.exitCode}`
 						);
+						autoScroll();
 					}
+					commandPrompted = true;
 				} else if (command === 'composer') {
 					await ensureComposerBinary();
 					const result = await runCli([
@@ -445,16 +527,43 @@ require_once __FILE__ . '.bin';
 						term.writeln(
 							`\r\nProcess exited with code ${result.exitCode}`
 						);
+						autoScroll();
+					}
+					commandPrompted = true;
+				} else if (command === 'php') {
+					if (!args.length) {
+						term.writeln('\r\nUsage: php <arguments>');
+						autoScroll();
+						prompt();
+						commandPrompted = true;
+					} else {
+						const result = await runCli(['php', ...args]);
+						if (!result.aborted && result.exitCode !== 0) {
+							term.writeln(
+								`\r\nProcess exited with code ${result.exitCode}`
+							);
+							autoScroll();
+						}
+						commandPrompted = true;
 					}
 				} else {
-					term.writeln(`\r\n${command}: command not found`);
+					const result = await runCli([command, ...args]);
+					if (!result.aborted && result.exitCode !== 0) {
+						term.writeln(
+							`\r\nProcess exited with code ${result.exitCode}`
+						);
+						autoScroll();
+					}
+					// term.writeln(`\r\n${command}: command not found`);
+					commandPrompted = true;
 				}
 			} catch (error: any) {
 				const message = error?.message || String(error);
 				term.writeln(`\r\nError: ${message}`);
+				autoScroll();
 			} finally {
 				isRunningCommand = false;
-				if (!currentProcess) {
+				if (!currentProcess && !commandPrompted) {
 					prompt();
 				}
 			}
@@ -478,6 +587,7 @@ require_once __FILE__ . '.bin';
 			for (const char of chunk) {
 				if (char === '\u0003') {
 					term.write('^C');
+					autoScroll();
 					currentLine = '';
 					void abortActiveProcess();
 					lastInputChar = char;
@@ -494,6 +604,7 @@ require_once __FILE__ . '.bin';
 							break;
 						}
 						term.write('\r\n');
+						autoScroll();
 						const submitted = currentLine;
 						if (submitted.trim()) {
 							commandHistory.unshift(submitted);
@@ -562,6 +673,7 @@ require_once __FILE__ . '.bin';
 		});
 
 		return () => {
+			viewport?.removeEventListener('scroll', updateStickiness);
 			term.dispose();
 			fitAddonRef.current = null;
 			progressRef.current = null;
@@ -580,7 +692,7 @@ require_once __FILE__ . '.bin';
 			}
 		});
 		return () => cancelAnimationFrame(frame);
-	}, [isCollapsed]);
+	}, [isCollapsed, resizeToken]);
 
 	useEffect(() => {
 		const handleResize = () => {

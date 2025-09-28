@@ -32,6 +32,7 @@
 	min-width: 280px;
 	min-height: 0;
 	height: 100%;
+	overflow: auto;
 }
 
 .controls {
@@ -213,6 +214,7 @@
 }
 
 .terminalSection {
+	height: 100%;
 	background: #111;
 	color: #fff;
 	font-family: 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas,
@@ -253,7 +255,7 @@
 
 .terminalPane {
 	box-sizing: border-box;
-	overflow: hidden;
+	overflow: auto;
 	padding: 8px;
 	flex: 1;
 }

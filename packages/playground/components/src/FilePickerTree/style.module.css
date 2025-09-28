@@ -43,13 +43,48 @@
 	font-size: 13px;
 	font-weight: 400;
 
-	&:focus,
-	.selected {
-		background-color: var(--wp-admin-theme-color);
-		color: #fff;
+	&:focus {
 		outline: 0 !important;
-		box-shadow: none !important;
+		/* outline: 0 !important;
+		box-shadow: none !important; */
 	}
+}
+
+.selected {
+	background-color: var(--wp-admin-theme-color);
+	color: #fff;
+
+	&:active,
+	&:focus {
+		color: #fff;
+		background-color: var(--wp-admin-theme-color);
+	}
+}
+
+.focused {
+	box-shadow: 0 0 0 1px var(--wp-admin-theme-color) inset;
+	border-radius: 2px;
+}
+
+.renaming {
+	align-items: center;
+	gap: 8px;
+}
+
+.rename-input,
+.renameInput {
+	flex: 1;
+	border: 1px solid #ccc;
+	border-radius: 2px;
+	padding: 4px 6px;
+	font-size: 13px;
+	font-family: inherit;
+}
+
+.inline-spinner :global(.components-spinner__outer),
+.inlineSpinner :global(.components-spinner__outer) {
+	width: 16px;
+	height: 16px;
 }
 
 .file-name {

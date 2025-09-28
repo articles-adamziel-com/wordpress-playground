@@ -16,6 +16,7 @@ import { setCode } from '../store';
 export const Layout = () => {
 	const [isHelpOpen, setHelpOpen] = useState(false);
 	const [isTerminalCollapsed, setTerminalCollapsed] = useState(false);
+	const [terminalResizeToken, setTerminalResizeToken] = useState(0);
 	const terminalPanelRef = useRef<ImperativePanelHandle | null>(null);
 	const { client: playgroundClient, bootStatus } = useAppSelector(
 		(state) => state.playground
@@ -56,7 +57,7 @@ export const Layout = () => {
 								<PlaygroundFilePickerTree
 									playgroundClient={playgroundClient}
 									root="/"
-									initialPath="/wordpress/code.php"
+									initialPath="/wordpress/workspace"
 									excludePaths={[
 										'/dev',
 										'/internal',
@@ -114,6 +115,9 @@ export const Layout = () => {
 								collapsible
 								onCollapse={() => setTerminalCollapsed(true)}
 								onExpand={() => setTerminalCollapsed(false)}
+								onResize={() =>
+									setTerminalResizeToken((token) => token + 1)
+								}
 								className={styles.terminalPanel}
 							>
 								<section
@@ -142,6 +146,7 @@ export const Layout = () => {
 									<div className={styles.terminalPane}>
 										<Terminal
 											isCollapsed={isTerminalCollapsed}
+											resizeToken={terminalResizeToken}
 										/>
 									</div>
 								</section>
