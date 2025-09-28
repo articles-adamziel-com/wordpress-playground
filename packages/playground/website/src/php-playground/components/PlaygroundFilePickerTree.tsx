@@ -1,8 +1,17 @@
 /* eslint-disable react-hooks/exhaustive-deps */
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, {
+	forwardRef,
+	useCallback,
+	useEffect,
+	useImperativeHandle,
+	useMemo,
+	useRef,
+	useState,
+} from 'react';
 import type { FileNode } from '@wp-playground/components';
 import { FilePickerTree as CoreFilePickerTree } from '@wp-playground/components';
 import type { PlaygroundClient } from '@wp-playground/client';
+import styles from './layout.module.css';
 
 function normalizePath(path: string) {
 	if (!path) return '/';
@@ -63,17 +72,12 @@ function corePathToAbsolute(corePath: string, normalizedRoot: string) {
 	return normalizedRoot;
 }
 
-export default function PlaygroundFilePickerTree({
-	root = '/wordpress',
-	initialPath,
-	excludePaths,
-	onSelect,
-	playgroundClient,
-	renamingPath,
-	onRename,
-	onRenameCancel,
-	onContextMenu,
-}: {
+export interface PlaygroundFilePickerTreeRef {
+	createFile: () => void;
+	createFolder: () => void;
+}
+
+export type PlaygroundFilePickerTreeProps = {
 	root?: string;
 	initialPath?: string;
 	excludePaths?: string[];
@@ -87,7 +91,45 @@ export default function PlaygroundFilePickerTree({
 		node: FileNode,
 		path: string
 	) => void;
-}) {
+	onAfterDelete?: (path: string, type: 'file' | 'folder') => void;
+	onAfterRename?: (
+		oldPath: string,
+		newPath: string,
+		type: 'file' | 'folder'
+	) => void;
+};
+
+const DEFAULT_WORKSPACE_DIR = '/wordpress/workspace';
+
+const isValidNameSegment = (name: string) => {
+	if (!name) {
+		return false;
+	}
+	if (name === '.' || name === '..') {
+		return false;
+	}
+	return !/[\\/]/.test(name);
+};
+
+const PlaygroundFilePickerTree = forwardRef<
+	PlaygroundFilePickerTreeRef,
+	PlaygroundFilePickerTreeProps
+>(function PlaygroundFilePickerTree(
+	{
+		root = '/wordpress',
+		initialPath,
+		excludePaths,
+		onSelect,
+		playgroundClient,
+		renamingPath,
+		onRename,
+		onRenameCancel,
+		onContextMenu,
+		onAfterDelete,
+		onAfterRename,
+	},
+	ref
+) {
 	const normalizedRoot = useMemo(() => normalizePath(root), [root]);
 	const rootName = useMemo(
 		() => getBaseName(normalizedRoot),
@@ -96,6 +138,23 @@ export default function PlaygroundFilePickerTree({
 
 	const [files, setFiles] = useState<FileNode[]>([]);
 	const [isRootLoading, setIsRootLoading] = useState(false);
+	const [contextMenu, setContextMenu] = useState<{
+		path: string;
+		type: 'file' | 'folder';
+		x: number;
+		y: number;
+	} | null>(null);
+	const [localRenamingPath, setLocalRenamingPath] = useState<string | null>(
+		null
+	);
+	const [refreshToken, setRefreshToken] = useState(0);
+	const pendingCreateRef = useRef<{
+		type: 'file' | 'folder';
+		tempPath: string;
+	} | null>(null);
+	const [lastSelectedPath, setLastSelectedPath] = useState<string | null>(
+		initialPath ?? DEFAULT_WORKSPACE_DIR
+	);
 
 	const getDirname = useCallback((path: string) => {
 		const p = normalizePath(path);
@@ -169,7 +228,6 @@ export default function PlaygroundFilePickerTree({
 		rootName,
 		playgroundClient,
 		JSON.stringify(excludePaths),
-		prioritizeRenaming,
 	]);
 
 	const coreInitialPath = useMemo(() => {
@@ -177,6 +235,27 @@ export default function PlaygroundFilePickerTree({
 			? toCorePath(initialPath, normalizedRoot)
 			: undefined;
 	}, [initialPath, normalizedRoot]);
+
+	// Dismiss context menu on outside interactions / ESC key
+	useEffect(() => {
+		if (!contextMenu) {
+			return;
+		}
+		const handleClose = () => setContextMenu(null);
+		const handleKey = (event: KeyboardEvent) => {
+			if (event.key === 'Escape') {
+				handleClose();
+			}
+		};
+		window.addEventListener('click', handleClose);
+		window.addEventListener('contextmenu', handleClose);
+		window.addEventListener('keydown', handleKey);
+		return () => {
+			window.removeEventListener('click', handleClose);
+			window.removeEventListener('contextmenu', handleClose);
+			window.removeEventListener('keydown', handleKey);
+		};
+	}, [contextMenu]);
 
 	const handleLoadChildren = useCallback(
 		async (corePath: string) => {
@@ -197,44 +276,389 @@ export default function PlaygroundFilePickerTree({
 
 	const handleSelect = useCallback(
 		(path: string) => {
-			if (onSelect) onSelect(normalizePath(path));
+			const normalized = normalizePath(path);
+			setLastSelectedPath(normalized);
+			if (onSelect) onSelect(normalized);
 		},
 		[onSelect]
 	);
 
-	return (
-		<CoreFilePickerTree
-			files={files}
-			initialPath={coreInitialPath}
-			onSelect={handleSelect}
-			onLoadChildren={handleLoadChildren}
-			isLoading={normalizedRoot === '/' && isRootLoading}
-			autoFocus={false}
-			renamingPath={
-				renamingPath
-					? toCorePath(renamingPath, normalizedRoot)
-					: undefined
+	const effectiveRenamingPath = useMemo(() => {
+		return renamingPath ?? localRenamingPath ?? undefined;
+	}, [renamingPath, localRenamingPath]);
+
+	const handleInternalContextMenu = useCallback(
+		(event: React.MouseEvent, node: FileNode, corePath: string) => {
+			event.preventDefault();
+			event.stopPropagation();
+			const absPath = corePathToAbsolute(corePath, normalizedRoot);
+			setLocalRenamingPath(null);
+			setContextMenu({
+				path: absPath,
+				type: node.type,
+				x: event.clientX,
+				y: event.clientY,
+			});
+			if (onContextMenu) {
+				onContextMenu(event, node, absPath);
 			}
-			onRename={(corePath, newName) => {
-				if (!onRename) return;
-				const absPath = corePathToAbsolute(corePath, normalizedRoot);
-				onRename(absPath, newName);
-			}}
-			onRenameCancel={(corePath) => {
-				if (!onRenameCancel) return;
-				const absPath = corePathToAbsolute(corePath, normalizedRoot);
-				onRenameCancel(absPath);
-			}}
-			onContextMenu={
-				onContextMenu
-					? (event, node, corePath) =>
-							onContextMenu(
-								event,
-								node as FileNode,
-								corePathToAbsolute(corePath, normalizedRoot)
-							)
-					: undefined
-			}
-		/>
+		},
+		[normalizedRoot, onContextMenu]
 	);
-}
+
+	const handleContextMenuRename = useCallback((targetPath: string) => {
+		setContextMenu(null);
+		setLocalRenamingPath(targetPath);
+	}, []);
+
+	// dirname helper not needed in this component
+
+	const findAvailableName = useCallback(
+		async (client: PlaygroundClient, baseDir: string, baseName: string) => {
+			let name = baseName;
+			let counter = 0;
+			const splitExt = (n: string) => {
+				const dot = n.lastIndexOf('.');
+				if (dot > 0) {
+					return { stem: n.slice(0, dot), ext: n.slice(dot) };
+				}
+				return { stem: n, ext: '' };
+			};
+			const prefix = baseDir === '/' ? '' : baseDir;
+			while (
+				(await client
+					.fileExists(`${prefix}/${name}`)
+					.catch(() => false)) ||
+				(await client.isDir(`${prefix}/${name}`).catch(() => false))
+			) {
+				counter += 1;
+				const { stem, ext } = splitExt(baseName);
+				name = `${stem} (${counter})${ext}`;
+			}
+			return name;
+		},
+		[]
+	);
+
+	const resolveBaseDir = useCallback(() => {
+		if (!lastSelectedPath) return DEFAULT_WORKSPACE_DIR;
+		// If selection is a folder, use it; otherwise use its dirname
+		return lastSelectedPath;
+	}, [lastSelectedPath]);
+
+	const handleCreateFile = useCallback(async () => {
+		if (!playgroundClient) {
+			return;
+		}
+		const baseDir = resolveBaseDir() || DEFAULT_WORKSPACE_DIR;
+		const normalizedBase = normalizePath(baseDir);
+		try {
+			const name = await findAvailableName(
+				playgroundClient,
+				normalizedBase,
+				'untitled.php'
+			);
+			const tempPath = `${
+				normalizedBase === '/' ? '' : normalizedBase
+			}/${name}`;
+			await playgroundClient.writeFile(tempPath, '');
+			pendingCreateRef.current = { type: 'file', tempPath };
+			setLocalRenamingPath(tempPath);
+			setLastSelectedPath(tempPath);
+			setRefreshToken((t) => t + 1);
+		} catch (e) {
+			void e;
+		}
+	}, [playgroundClient, resolveBaseDir, findAvailableName]);
+
+	const handleCreateDirectory = useCallback(async () => {
+		if (!playgroundClient) {
+			return;
+		}
+		const baseDir = resolveBaseDir() || DEFAULT_WORKSPACE_DIR;
+		const normalizedBase = normalizePath(baseDir);
+		try {
+			const name = await findAvailableName(
+				playgroundClient,
+				normalizedBase,
+				'New Folder'
+			);
+			const tempPath = `${
+				normalizedBase === '/' ? '' : normalizedBase
+			}/${name}`;
+			await playgroundClient.mkdir(tempPath);
+			pendingCreateRef.current = { type: 'folder', tempPath };
+			setLocalRenamingPath(tempPath);
+			setLastSelectedPath(tempPath);
+			setRefreshToken((t) => t + 1);
+		} catch (e) {
+			void e;
+		}
+	}, [playgroundClient, resolveBaseDir, findAvailableName]);
+
+	useImperativeHandle(
+		ref,
+		() => ({
+			createFile: handleCreateFile,
+			createFolder: handleCreateDirectory,
+		}),
+		[handleCreateFile, handleCreateDirectory]
+	);
+
+	const handleDeletePath = useCallback(
+		async (targetPath: string, type: 'file' | 'folder') => {
+			if (!playgroundClient) {
+				return;
+			}
+			const normalized = normalizePath(targetPath);
+			setContextMenu(null);
+			try {
+				if (type === 'folder') {
+					await playgroundClient.rmdir(normalized, {
+						recursive: true,
+					} as any);
+				} else {
+					await playgroundClient.unlink(normalized);
+				}
+			} catch {
+				// Ignore failure
+			} finally {
+				setLocalRenamingPath(null);
+				setRefreshToken((t) => t + 1);
+				onAfterDelete?.(normalized, type);
+			}
+		},
+		[playgroundClient, onAfterDelete]
+	);
+
+	const handleDownloadPath = useCallback(
+		async (targetPath: string) => {
+			if (!playgroundClient) {
+				return;
+			}
+			setContextMenu(null);
+			try {
+				const content = await playgroundClient.readFileAsText(
+					targetPath
+				);
+				const blob = new Blob([content], {
+					type: 'text/plain;charset=utf-8',
+				});
+				const url = URL.createObjectURL(blob);
+				const link = document.createElement('a');
+				link.href = url;
+				link.download =
+					normalizePath(targetPath).split('/').pop() || 'download';
+				document.body.appendChild(link);
+				link.click();
+				link.remove();
+				URL.revokeObjectURL(url);
+			} catch {
+				// Ignore failure
+			}
+		},
+		[playgroundClient]
+	);
+
+	const contextMenuStyle = useMemo(() => {
+		if (!contextMenu)
+			return undefined as undefined | { left: number; top: number };
+		const left =
+			typeof window === 'undefined'
+				? contextMenu.x
+				: Math.min(contextMenu.x, window.innerWidth - 200);
+		const top =
+			typeof window === 'undefined'
+				? contextMenu.y
+				: Math.min(contextMenu.y, window.innerHeight - 140);
+		return { left, top };
+	}, [contextMenu]);
+
+	return (
+		<>
+			<CoreFilePickerTree
+				key={refreshToken}
+				files={files}
+				initialPath={coreInitialPath}
+				onSelect={handleSelect}
+				onLoadChildren={handleLoadChildren}
+				isLoading={normalizedRoot === '/' && isRootLoading}
+				autoFocus={false}
+				renamingPath={
+					effectiveRenamingPath
+						? toCorePath(effectiveRenamingPath, normalizedRoot)
+						: undefined
+				}
+				onRename={async (corePath, newName) => {
+					if (!playgroundClient) return;
+					const absPath = corePathToAbsolute(
+						corePath,
+						normalizedRoot
+					);
+					const pending = pendingCreateRef.current;
+					const isPending = pending?.tempPath === absPath;
+					const parent = getDirname(absPath);
+					const sanitized = (newName || '').trim();
+					if (!isValidNameSegment(sanitized)) {
+						if (isPending) {
+							try {
+								if (pending.type === 'folder') {
+									await playgroundClient.rmdir(absPath, {
+										recursive: true,
+									} as any);
+								} else {
+									await playgroundClient.unlink(absPath);
+								}
+							} catch (e) {
+								void e;
+							}
+							pendingCreateRef.current = null;
+						}
+						setLocalRenamingPath(isPending ? null : absPath);
+						return;
+					}
+
+					const composePath = (name: string) =>
+						parent === '/' ? `/${name}` : `${parent}/${name}`;
+					const finalName = sanitized;
+					let candidate = composePath(finalName);
+					const candidateNormalized = normalizePath(candidate);
+					if (candidateNormalized === absPath) {
+						setLocalRenamingPath(null);
+						if (isPending) {
+							pendingCreateRef.current = null;
+						}
+						setLastSelectedPath(candidateNormalized);
+						return;
+					}
+
+					const exists = await playgroundClient
+						.fileExists(candidateNormalized)
+						.catch(() => false);
+					const existsDir = await playgroundClient
+						.isDir(candidateNormalized)
+						.catch(() => false);
+					if (
+						(exists || existsDir) &&
+						candidateNormalized !== absPath
+					) {
+						if (isPending) {
+							try {
+								const unique = await findAvailableName(
+									playgroundClient,
+									parent === '/' ? '/' : parent,
+									finalName
+								);
+								candidate = composePath(unique);
+							} catch (e) {
+								void e;
+							}
+						} else {
+							setLocalRenamingPath(absPath);
+							return;
+						}
+					}
+
+					let candidateIsDir = pending?.type === 'folder';
+					try {
+						await playgroundClient.mv(absPath, candidate as any);
+						if (!pending) {
+							const isDir = await playgroundClient
+								.isDir(candidate as any)
+								.catch(() => false);
+							candidateIsDir = isDir;
+						}
+						setLastSelectedPath(candidate);
+						onAfterRename?.(
+							absPath,
+							candidate,
+							candidateIsDir ? 'folder' : 'file'
+						);
+					} catch {
+						if (isPending) {
+							try {
+								if (pending?.type === 'folder') {
+									await playgroundClient.rmdir(absPath, {
+										recursive: true,
+									} as any);
+								} else {
+									await playgroundClient.unlink(absPath);
+								}
+							} catch {
+								// Ignore failure
+							}
+						}
+					} finally {
+						pendingCreateRef.current = null;
+						setLocalRenamingPath(null);
+						setRefreshToken((t) => t + 1);
+					}
+				}}
+				onRenameCancel={async (corePath) => {
+					const absPath = corePathToAbsolute(
+						corePath,
+						normalizedRoot
+					);
+					const pending = pendingCreateRef.current;
+					if (!playgroundClient || pending?.tempPath !== absPath) {
+						onRenameCancel?.(absPath);
+						setLocalRenamingPath((prev) =>
+							prev === absPath ? null : prev
+						);
+						return;
+					}
+					try {
+						if (pending.type === 'folder') {
+							await playgroundClient.rmdir(absPath, {
+								recursive: true,
+							} as any);
+						} else {
+							await playgroundClient.unlink(absPath);
+						}
+					} catch (e) {
+						void e;
+					}
+					pendingCreateRef.current = null;
+					setLocalRenamingPath(null);
+					setRefreshToken((t) => t + 1);
+				}}
+				onContextMenu={handleInternalContextMenu}
+			/>
+			{contextMenu && contextMenuStyle && (
+				<div
+					className={styles.contextMenu}
+					style={contextMenuStyle}
+					onClick={(event) => event.stopPropagation()}
+					onContextMenu={(event) => event.preventDefault()}
+				>
+					<button
+						className={styles.contextMenuButton}
+						onClick={() =>
+							handleContextMenuRename(contextMenu.path)
+						}
+					>
+						Rename
+					</button>
+					<button
+						className={`${styles.contextMenuButton} ${styles.contextMenuButtonDanger}`}
+						onClick={() =>
+							handleDeletePath(contextMenu.path, contextMenu.type)
+						}
+					>
+						Delete
+					</button>
+					{contextMenu.type === 'file' && (
+						<button
+							className={styles.contextMenuButton}
+							onClick={() => handleDownloadPath(contextMenu.path)}
+						>
+							Download
+						</button>
+					)}
+				</div>
+			)}
+		</>
+	);
+});
+
+export default PlaygroundFilePickerTree;

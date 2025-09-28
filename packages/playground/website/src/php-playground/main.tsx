@@ -2,13 +2,13 @@
  * Follow-up work:
  *
  * * Files explorer
- *    * Detect when a binary file is opened, show a special message "binary file. can't
- *      edit (download)"
- *    * Create and delete files and directories. "Refresh" button to refresh the directory
- *      tree – OR auto-refresh every second or five seconds.
+ *    * "Refresh" button to refresh the directory tree – OR auto-refresh every ~five seconds.
  *    * Download file / directory action
  *    * Bug – sometimes collapsing a directory = children are not visible after reopening.
- *      Is it an actual bug or just a faulty vite hot reloader?
+ *      It an actual bug, not a faulty vite hot reloader!
+ *    * ✅ Detect when a binary file is opened, show a special message "binary file. can't
+ *         edit (download)"
+ *    * ✅ Create and delete files and directories.
  *    * ✅ CSS papercuts, e.g. dark font on dark background for active hovered selected files.
  *    * ✅ Improve visual feedback when loading files (don't replace filename with loader).
  *    * ✅ Don't re-render (and show the loading indicator) when not needed.
@@ -17,7 +17,7 @@
  *    * ✅ Ensure it's scrollable with overflow: auto
  *    * ✅ Initialization UX – show the expanded path right away
  *    * ✅ Separate "focus" from "open" actions so that I can browse files
- *      without editing them
+ *         without editing them
  * * Editor
  *    * ✅ Save changes when editing files other than code.php
  *    * ✅ Display breadcrumbs of the currently open file above the editor?
