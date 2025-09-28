@@ -18,9 +18,8 @@ export const Layout = () => {
 	const [isTerminalCollapsed, setTerminalCollapsed] = useState(false);
 	const [terminalResizeToken, setTerminalResizeToken] = useState(0);
 	const terminalPanelRef = useRef<ImperativePanelHandle | null>(null);
-	const { client: playgroundClient, bootStatus } = useAppSelector(
-		(state) => state.playground
-	);
+	const playgroundClient = useAppSelector((state) => state.playground.client);
+	const bootStatus = useAppSelector((state) => state.playground.bootStatus);
 
 	useEffect(() => {
 		const previousTitle = document.title;

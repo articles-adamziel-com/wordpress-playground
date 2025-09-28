@@ -2,16 +2,17 @@
  * Follow-up work:
  *
  * * Files explorer
- *    * Initialization UX – show the expanded path right away
- *    * ✅ Separate "focus" from "open" actions so that I can browse files
- *      without editing them
+ *    * Don't display "/", display just "home", "tmp", and "wordpress" directly
  *    * Detect when a binary file is opened, show a special message "binary file. can't
  *      edit (download)"
  *    * Create and delete files and directories. "Refresh" button to refresh the directory
  *      tree – OR auto-refresh every second or five seconds.
  *    * Download file / directory action
+ *    * ✅ Refresh the files after collapsing and expanding the parent directory
  *    * ✅ Ensure it's scrollable with overflow: auto
- *    * Don't display "/", display just "home", "tmp", and "wordpress" directly
+ *    * ✅ Initialization UX – show the expanded path right away
+ *    * ✅ Separate "focus" from "open" actions so that I can browse files
+ *      without editing them
  * * Editor
  *    * Save changes when editing files other than code.php
  *    * Display breadcrumbs of the currently open file above the editor?

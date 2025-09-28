@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import type { FileNode } from '@wp-playground/components';
 import { FilePickerTree as CoreFilePickerTree } from '@wp-playground/components';
 import type { PlaygroundClient } from '@wp-playground/client';
@@ -36,8 +36,8 @@ function toCorePath(absPath: string, normalizedRoot: string) {
 	const rootName = getBaseName(normalizedRoot);
 	if (abs === normalizedRoot) return rootName;
 	if (normalizedRoot === '/') {
-		// When root is '/', core path is the absolute path
-		return abs;
+		// When root is '/', drop the leading '/'
+		return abs === '/' ? '' : abs.slice(1);
 	}
 	const prefix = normalizedRoot.endsWith('/')
 		? normalizedRoot
@@ -52,8 +52,8 @@ function corePathToAbsolute(corePath: string, normalizedRoot: string) {
 	const rootName = getBaseName(normalizedRoot);
 	if (corePath === rootName) return normalizedRoot;
 	if (normalizedRoot === '/') {
-		// When root is '/', the incoming core path is absolute
-		return normalizePath(corePath);
+		// When root is '/', the incoming core path is relative to '/'
+		return normalizePath('/' + corePath);
 	}
 	const prefix = rootName.endsWith('/') ? rootName : rootName + '/';
 	if (corePath.startsWith(prefix)) {
@@ -81,15 +81,39 @@ export default function PlaygroundFilePickerTree({
 		[normalizedRoot]
 	);
 
-	const files = useMemo<FileNode[]>(
-		() => [
-			{
-				name: rootName,
-				type: 'folder',
-			},
-		],
-		[rootName]
-	);
+	const [files, setFiles] = useState<FileNode[]>([]);
+	const [isRootLoading, setIsRootLoading] = useState(false);
+
+	useEffect(() => {
+		let cancelled = false;
+		async function init() {
+			if (normalizedRoot === '/') {
+				setIsRootLoading(true);
+				if (!playgroundClient) {
+					if (!cancelled) setFiles([]);
+					setIsRootLoading(false);
+					return;
+				}
+				const items = await listDir(playgroundClient, '/');
+				const filtered = items.filter((item) => {
+					const childAbs = `/${item.name}`;
+					return !excludePaths?.includes(childAbs);
+				});
+				if (!cancelled) setFiles(filtered as FileNode[]);
+				setIsRootLoading(false);
+			} else {
+				if (!cancelled)
+					setFiles([
+						{ name: rootName, type: 'folder' },
+					] as FileNode[]);
+				setIsRootLoading(false);
+			}
+		}
+		init();
+		return () => {
+			cancelled = true;
+		};
+	}, [normalizedRoot, rootName, playgroundClient, excludePaths]);
 
 	const coreInitialPath = useMemo(() => {
 		return initialPath
@@ -127,6 +151,9 @@ export default function PlaygroundFilePickerTree({
 			initialPath={coreInitialPath}
 			onSelect={handleSelect}
 			onLoadChildren={handleLoadChildren}
+			isLoading={normalizedRoot === '/' && isRootLoading}
+			autoFocus={false}
+			inert={isRootLoading}
 		/>
 	);
 }

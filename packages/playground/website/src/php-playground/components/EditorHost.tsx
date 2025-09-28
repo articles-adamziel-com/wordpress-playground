@@ -105,7 +105,9 @@ export const EditorHost = () => {
 			view.destroy();
 			viewRef.current = null;
 		};
-	}, [code, dispatch]);
+		// The editor instance should persist across renders. Recreate it only once.
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, []);
 
 	useEffect(() => {
 		const view = viewRef.current;

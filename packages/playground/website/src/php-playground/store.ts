@@ -12,6 +12,7 @@ export type BootStatus = 'idle' | 'booting' | 'ready' | 'error';
 
 export interface PlaygroundState {
 	code: string;
+	currentPath: string | null;
 	phpVersion: string;
 	wpVersion: string;
 	phpVersions: string[];
@@ -26,6 +27,7 @@ export interface PlaygroundState {
 
 const initialState: PlaygroundState = {
 	code: DEFAULT_CODE,
+	currentPath: null,
 	phpVersion: DEFAULT_PHP_VERSION,
 	wpVersion: 'latest',
 	phpVersions: SupportedPHPVersionsList,
@@ -44,6 +46,9 @@ const playgroundSlice = createSlice({
 	reducers: {
 		setCode(state, action: PayloadAction<string>) {
 			state.code = action.payload;
+		},
+		setCurrentPath(state, action: PayloadAction<string | null>) {
+			state.currentPath = action.payload;
 		},
 		setPhpVersion(state, action: PayloadAction<string>) {
 			state.phpVersion = action.payload;
@@ -95,6 +100,7 @@ const playgroundSlice = createSlice({
 
 export const {
 	setCode,
+	setCurrentPath,
 	setPhpVersion,
 	setWpVersion,
 	setWpVersions,

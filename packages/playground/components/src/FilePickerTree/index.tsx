@@ -33,6 +33,8 @@ export type FilePickerControlProps = {
 	renamingPath?: string | null;
 	onRename?: (path: string, newName: string) => void;
 	onRenameCancel?: (path: string) => void;
+	autoFocus?: boolean;
+	inert?: boolean;
 };
 
 type ExpandedNodePaths = Record<string, boolean>;
@@ -50,6 +52,8 @@ export const FilePickerTree: React.FC<FilePickerControlProps> = ({
 	renamingPath = null,
 	onRename,
 	onRenameCancel,
+	autoFocus = true,
+	inert = false,
 }) => {
 	function buildPathChain(path: string): string[] {
 		if (!path) return [];
@@ -193,6 +197,14 @@ export const FilePickerTree: React.FC<FilePickerControlProps> = ({
 			expandNode(path, isOpen);
 			if (isOpen) {
 				await loadChildrenForPath(path, node);
+			} else {
+				// Clear cached children on collapse so that reopening refreshes the listing
+				setLazyChildren((prev) => {
+					if (prev[path] === undefined) return prev;
+					const next = { ...prev } as LoadedChildrenMap;
+					delete next[path];
+					return next;
+				});
 			}
 		},
 		[expandNode, loadChildrenForPath]
@@ -268,13 +280,23 @@ export const FilePickerTree: React.FC<FilePickerControlProps> = ({
 		if (renamingPath && renamingPath === focusedPath) {
 			return;
 		}
+		if (!autoFocus) {
+			return;
+		}
 		const focusTarget = containerRef.current?.querySelector(
 			`[data-path="${focusedPath}"]`
 		) as HTMLElement | null;
 		if (focusTarget && typeof focusTarget.focus === 'function') {
 			focusTarget.focus();
 		}
-	}, [files, focusedPath, generatePath, lazyChildren, renamingPath]);
+	}, [
+		autoFocus,
+		files,
+		focusedPath,
+		generatePath,
+		lazyChildren,
+		renamingPath,
+	]);
 
 	useEffect(() => {
 		return () => {
@@ -355,7 +377,11 @@ export const FilePickerTree: React.FC<FilePickerControlProps> = ({
 	}
 
 	return (
-		<div onKeyDown={handleKeyDown} ref={containerRef}>
+		<div
+			onKeyDown={handleKeyDown}
+			ref={containerRef}
+			{...(inert ? { inert: 'true' } : {})}
+		>
 			<TreeGrid className={css['filePickerTree']}>
 				{files.map((file, index) => (
 					<NodeRow
