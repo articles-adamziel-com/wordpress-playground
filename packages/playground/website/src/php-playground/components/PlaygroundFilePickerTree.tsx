@@ -353,83 +353,93 @@ const PlaygroundFilePickerTree = forwardRef<
 		[]
 	);
 
-	const resolveBaseDir = useCallback(() => {
-		if (!lastSelectedPath) return DEFAULT_WORKSPACE_DIR;
-		// If selection is a folder, use it; otherwise use its dirname
-		return lastSelectedPath;
-	}, [lastSelectedPath]);
+	const resolveBaseDir = useCallback(
+		(overridePath?: string) => {
+			const basePath = overridePath || lastSelectedPath;
+			if (!basePath) return DEFAULT_WORKSPACE_DIR;
+			// If selection is a folder, use it; otherwise use its dirname
+			return basePath;
+		},
+		[lastSelectedPath]
+	);
 
-	const handleCreateFile = useCallback(async () => {
-		if (!playgroundClient) {
-			return;
-		}
-		const baseDir = resolveBaseDir() || DEFAULT_WORKSPACE_DIR;
-		const normalizedBase = normalizePath(baseDir);
-		try {
-			const name = await findAvailableName(
-				playgroundClient,
-				normalizedBase,
-				'untitled.php'
-			);
-			const tempPath = `${
-				normalizedBase === '/' ? '' : normalizedBase
-			}/${name}`;
-			await playgroundClient.writeFile(tempPath, '');
-			pendingCreateRef.current = { type: 'file', tempPath };
-			setLocalRenamingPath(tempPath);
-			setLastSelectedPath(tempPath);
-			setInvalidatePath(normalizedBase);
-			setInvalidateKey((k) => k + 1);
-			// Ensure the base directory is expanded and focused so the form is visible
-			setExpandRequestPath(normalizedBase);
-			setExpandRequestKey((k) => k + 1);
-			setFocusRequestPath(tempPath);
-			setFocusRequestKey((k) => k + 1);
-			// Clear requests after a short delay
-			setTimeout(() => {
-				setExpandRequestPath(null);
-				setFocusRequestPath(null);
-			}, 100);
-		} catch (e) {
-			void e;
-		}
-	}, [playgroundClient, resolveBaseDir, findAvailableName]);
+	const handleCreateFile = useCallback(
+		async (targetDir?: string) => {
+			if (!playgroundClient) {
+				return;
+			}
+			const baseDir = resolveBaseDir(targetDir) || DEFAULT_WORKSPACE_DIR;
+			const normalizedBase = normalizePath(baseDir);
+			try {
+				const name = await findAvailableName(
+					playgroundClient,
+					normalizedBase,
+					'untitled.php'
+				);
+				const tempPath = `${
+					normalizedBase === '/' ? '' : normalizedBase
+				}/${name}`;
+				await playgroundClient.writeFile(tempPath, '');
+				pendingCreateRef.current = { type: 'file', tempPath };
+				setLocalRenamingPath(tempPath);
+				setLastSelectedPath(tempPath);
+				setInvalidatePath(normalizedBase);
+				setInvalidateKey((k) => k + 1);
+				// Ensure the base directory is expanded and focused so the form is visible
+				setExpandRequestPath(normalizedBase);
+				setExpandRequestKey((k) => k + 1);
+				setFocusRequestPath(tempPath);
+				setFocusRequestKey((k) => k + 1);
+				// Clear requests after a short delay
+				setTimeout(() => {
+					setExpandRequestPath(null);
+					setFocusRequestPath(null);
+				}, 100);
+			} catch (e) {
+				void e;
+			}
+		},
+		[playgroundClient, resolveBaseDir, findAvailableName]
+	);
 
-	const handleCreateDirectory = useCallback(async () => {
-		if (!playgroundClient) {
-			return;
-		}
-		const baseDir = resolveBaseDir() || DEFAULT_WORKSPACE_DIR;
-		const normalizedBase = normalizePath(baseDir);
-		try {
-			const name = await findAvailableName(
-				playgroundClient,
-				normalizedBase,
-				'New Folder'
-			);
-			const tempPath = `${
-				normalizedBase === '/' ? '' : normalizedBase
-			}/${name}`;
-			await playgroundClient.mkdir(tempPath);
-			pendingCreateRef.current = { type: 'folder', tempPath };
-			setLocalRenamingPath(tempPath);
-			setLastSelectedPath(tempPath);
-			setInvalidatePath(normalizedBase);
-			setInvalidateKey((k) => k + 1);
-			// Ensure the base directory is expanded and focused so the form is visible
-			setExpandRequestPath(normalizedBase);
-			setExpandRequestKey((k) => k + 1);
-			setFocusRequestPath(tempPath);
-			setFocusRequestKey((k) => k + 1);
-			// Clear requests after a short delay
-			setTimeout(() => {
-				setExpandRequestPath(null);
-				setFocusRequestPath(null);
-			}, 100);
-		} catch (e) {
-			void e;
-		}
-	}, [playgroundClient, resolveBaseDir, findAvailableName]);
+	const handleCreateDirectory = useCallback(
+		async (targetDir?: string) => {
+			if (!playgroundClient) {
+				return;
+			}
+			const baseDir = resolveBaseDir(targetDir) || DEFAULT_WORKSPACE_DIR;
+			const normalizedBase = normalizePath(baseDir);
+			try {
+				const name = await findAvailableName(
+					playgroundClient,
+					normalizedBase,
+					'New Folder'
+				);
+				const tempPath = `${
+					normalizedBase === '/' ? '' : normalizedBase
+				}/${name}`;
+				await playgroundClient.mkdir(tempPath);
+				pendingCreateRef.current = { type: 'folder', tempPath };
+				setLocalRenamingPath(tempPath);
+				setLastSelectedPath(tempPath);
+				setInvalidatePath(normalizedBase);
+				setInvalidateKey((k) => k + 1);
+				// Ensure the base directory is expanded and focused so the form is visible
+				setExpandRequestPath(normalizedBase);
+				setExpandRequestKey((k) => k + 1);
+				setFocusRequestPath(tempPath);
+				setFocusRequestKey((k) => k + 1);
+				// Clear requests after a short delay
+				setTimeout(() => {
+					setExpandRequestPath(null);
+					setFocusRequestPath(null);
+				}, 100);
+			} catch (e) {
+				void e;
+			}
+		},
+		[playgroundClient, resolveBaseDir, findAvailableName]
+	);
 
 	useImperativeHandle(
 		ref,
@@ -786,10 +796,7 @@ const PlaygroundFilePickerTree = forwardRef<
 								// Focus and expand the directory, then create a file inside
 								setExpandRequestPath(dir);
 								setExpandRequestKey((k) => k + 1);
-								const baseBefore = lastSelectedPath;
-								setLastSelectedPath(dir);
-								await handleCreateFile();
-								setLastSelectedPath(baseBefore);
+								await handleCreateFile(dir);
 							}}
 						>
 							Create file
@@ -803,10 +810,7 @@ const PlaygroundFilePickerTree = forwardRef<
 								setContextMenu(null);
 								setExpandRequestPath(dir);
 								setExpandRequestKey((k) => k + 1);
-								const baseBefore = lastSelectedPath;
-								setLastSelectedPath(dir);
-								await handleCreateDirectory();
-								setLastSelectedPath(baseBefore);
+								await handleCreateDirectory(dir);
 							}}
 						>
 							Create directory
