@@ -69,12 +69,20 @@ export default function PlaygroundFilePickerTree({
 	excludePaths,
 	onSelect,
 	playgroundClient,
+	refreshToken = 0,
+	renamingPath,
+	onRename,
+	onRenameCancel,
 }: {
 	root?: string;
 	initialPath?: string;
 	excludePaths?: string[];
 	onSelect?: (path: string) => void;
 	playgroundClient?: PlaygroundClient;
+	refreshToken?: number;
+	renamingPath?: string | null;
+	onRename?: (path: string, newName: string) => void;
+	onRenameCancel?: (path: string) => void;
 }) {
 	const normalizedRoot = useMemo(() => normalizePath(root), [root]);
 	const rootName = useMemo(
@@ -119,6 +127,7 @@ export default function PlaygroundFilePickerTree({
 		rootName,
 		playgroundClient,
 		JSON.stringify(excludePaths),
+		refreshToken,
 	]);
 
 	const coreInitialPath = useMemo(() => {
@@ -153,13 +162,28 @@ export default function PlaygroundFilePickerTree({
 
 	return (
 		<CoreFilePickerTree
+			key={refreshToken}
 			files={files}
 			initialPath={coreInitialPath}
 			onSelect={handleSelect}
 			onLoadChildren={handleLoadChildren}
 			isLoading={normalizedRoot === '/' && isRootLoading}
 			autoFocus={false}
-			inert={isRootLoading}
+			renamingPath={
+				renamingPath
+					? toCorePath(renamingPath, normalizedRoot)
+					: undefined
+			}
+			onRename={(corePath, newName) => {
+				if (!onRename) return;
+				const absPath = corePathToAbsolute(corePath, normalizedRoot);
+				onRename(absPath, newName);
+			}}
+			onRenameCancel={(corePath) => {
+				if (!onRenameCancel) return;
+				const absPath = corePathToAbsolute(corePath, normalizedRoot);
+				onRenameCancel(absPath);
+			}}
 		/>
 	);
 }

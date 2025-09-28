@@ -71,7 +71,8 @@ export const Terminal = ({ isCollapsed, resizeToken = 0 }: TerminalProps) => {
 	const terminalContainerRef = useRef<HTMLDivElement | null>(null);
 	const fitAddonRef = useRef<FitAddon | null>(null);
 	const progressRef = useRef<DownloadProgress | null>(null);
-	const cwdRef = useRef<string>('/wordpress');
+	// @TODO: Initialize this from the client, not with a hardcoded default.
+	const cwdRef = useRef<string>('/workspace');
 
 	useEffect(() => {
 		const container = terminalContainerRef.current;
@@ -127,9 +128,8 @@ export const Terminal = ({ isCollapsed, resizeToken = 0 }: TerminalProps) => {
 			});
 		};
 
-		let currentWorkingDirectory = cwdRef.current;
 		const promptPrefix = () => {
-			const dirName = basename(currentWorkingDirectory) || '/';
+			const dirName = basename(cwdRef.current) || '/';
 			return `(${dirName}) $ `;
 		};
 		const resolvePath = (target: string) => {
@@ -503,17 +503,12 @@ require_once __FILE__ . '.bin';
 					commandPrompted = true;
 				} else if (command === 'wp') {
 					await ensureWpCliBinary();
-					const result = await runCli(
-						[
-							'php',
-							'/tmp/wp-cli.phar',
-							'--path=/wordpress',
-							...args,
-						],
-						{
-							cwd: cwdRef.current,
-						}
-					);
+					const result = await runCli([
+						'php',
+						'/tmp/wp-cli.phar',
+						'--path=/wordpress',
+						...args,
+					]);
 					if (!result.aborted && result.exitCode !== 0) {
 						term.writeln(
 							`\r\nProcess exited with code ${result.exitCode}`

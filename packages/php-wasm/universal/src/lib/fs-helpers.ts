@@ -231,8 +231,11 @@ export class FSHelpers {
 	 * @param target
 	 * @param link
 	 */
-	static symlink(FS: Emscripten.RootFS, target: string, link: string): any {
-		return FS.symlink(target, link);
+	static symlink(FS: Emscripten.RootFS, target: string, link: string): true {
+		// Will throw an error if the symlink cannot be created or
+		// return a FS Node if the symlink is created.
+		FS.symlink(target, link);
+		return true;
 	}
 
 	/**

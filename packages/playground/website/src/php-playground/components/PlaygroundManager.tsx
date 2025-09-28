@@ -161,9 +161,13 @@ export const PlaygroundManager = () => {
 					return;
 				}
 
-				await clientInstance.mkdir('/wordpress/workspace');
-				const initialPath = '/wordpress/workspace/code.php';
+				await clientInstance.mkdir('/workspace');
+				const initialPath = '/workspace/code.php';
 				await clientInstance.writeFile(initialPath, codeRef.current);
+				await clientInstance.symlink(
+					'/workspace',
+					'/wordpress/workspace'
+				);
 				dispatch(setCurrentPath(initialPath));
 				await clientInstance.goTo('/workspace/code.php');
 

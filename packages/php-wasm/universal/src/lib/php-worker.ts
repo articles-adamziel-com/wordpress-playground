@@ -249,6 +249,11 @@ export class PHPWorker implements LimitedPHPApi, AsyncDisposable {
 		return _private.get(this)!.php!.writeFile(path, data);
 	}
 
+	/** @inheritDoc @php-wasm/universal!/PHP.symlink */
+	symlink(target: string, path: string): void {
+		return _private.get(this)!.php!.symlink(target, path);
+	}
+
 	/** @inheritDoc @php-wasm/universal!/PHP.unlink */
 	unlink(path: string): void {
 		return _private.get(this)!.php!.unlink(path);

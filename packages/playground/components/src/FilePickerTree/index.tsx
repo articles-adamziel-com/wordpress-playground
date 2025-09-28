@@ -34,7 +34,6 @@ export type FilePickerControlProps = {
 	onRename?: (path: string, newName: string) => void;
 	onRenameCancel?: (path: string) => void;
 	autoFocus?: boolean;
-	inert?: boolean;
 };
 
 type ExpandedNodePaths = Record<string, boolean>;
@@ -53,7 +52,6 @@ export const FilePickerTree: React.FC<FilePickerControlProps> = ({
 	onRename,
 	onRenameCancel,
 	autoFocus = true,
-	inert = false,
 }) => {
 	function buildPathChain(path: string): string[] {
 		if (!path) return [];
@@ -377,11 +375,7 @@ export const FilePickerTree: React.FC<FilePickerControlProps> = ({
 	}
 
 	return (
-		<div
-			onKeyDown={handleKeyDown}
-			ref={containerRef}
-			{...(inert ? { inert: 'true' } : {})}
-		>
+		<div onKeyDown={handleKeyDown} ref={containerRef}>
 			<TreeGrid className={css['filePickerTree']}>
 				{files.map((file, index) => (
 					<NodeRow
@@ -465,7 +459,6 @@ const NodeRow: React.FC<{
 	const renameHandledRef = useRef(false);
 
 	const resolvedChildren = getChildren(node, path) ?? [];
-	const isLoadingChildren = Boolean(loadingPaths[path]);
 
 	useEffect(() => {
 		if (isRenaming) {
@@ -602,7 +595,6 @@ const NodeRow: React.FC<{
 											node.type === 'folder' && isExpanded
 										}
 										level={level}
-										isLoading={isLoadingChildren}
 										hideName
 									/>
 									<input
@@ -648,7 +640,6 @@ const NodeRow: React.FC<{
 											node.type === 'folder' && isExpanded
 										}
 										level={level}
-										isLoading={isLoadingChildren}
 									/>
 								</Button>
 							)}
@@ -689,9 +680,8 @@ const FileName: React.FC<{
 	node: FileNode;
 	level: number;
 	isOpen?: boolean;
-	isLoading?: boolean;
 	hideName?: boolean;
-}> = ({ node, level, isOpen, isLoading = false, hideName = false }) => {
+}> = ({ node, level, isOpen, hideName = false }) => {
 	const indent: string[] = [];
 	for (let i = 0; i < level; i++) {
 		indent.push('&nbsp;&nbsp;&nbsp;&nbsp;');
@@ -708,7 +698,6 @@ const FileName: React.FC<{
 				<div style={{ width: 16 }}>&nbsp;</div>
 			)}
 			<Icon width={16} icon={node.type === 'folder' ? folder : file} />
-			{isLoading && <Spinner className={css['inlineSpinner']} />}
 			{!hideName && <span className={css['fileName']}>{node.name}</span>}
 		</>
 	);

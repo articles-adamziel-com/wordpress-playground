@@ -54,9 +54,10 @@
 	background-color: var(--wp-admin-theme-color);
 	color: #fff;
 
+	&:hover,
 	&:active,
 	&:focus {
-		color: #fff;
+		color: #fff !important;
 		background-color: var(--wp-admin-theme-color);
 	}
 }
