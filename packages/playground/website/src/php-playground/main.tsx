@@ -2,12 +2,12 @@
  * Follow-up work:
  *
  * * Files explorer
- *    * Don't display "/", display just "home", "tmp", and "wordpress" directly
  *    * Detect when a binary file is opened, show a special message "binary file. can't
  *      edit (download)"
  *    * Create and delete files and directories. "Refresh" button to refresh the directory
  *      tree – OR auto-refresh every second or five seconds.
  *    * Download file / directory action
+ *    * ✅ Don't display "/", display just "home", "tmp", and "wordpress" directly
  *    * ✅ Refresh the files after collapsing and expanding the parent directory
  *    * ✅ Ensure it's scrollable with overflow: auto
  *    * ✅ Initialization UX – show the expanded path right away

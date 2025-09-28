@@ -11,6 +11,7 @@ import {
 	setWpVersions,
 	setWpVersionsLoading,
 } from '../store';
+import { setCurrentPath } from '../store';
 import { loadStateFromURL, saveStateToURL } from '../url-state';
 import { playgroundRuntime } from '../runtime';
 
@@ -161,10 +162,9 @@ export const PlaygroundManager = () => {
 				}
 
 				await clientInstance.mkdir('/wordpress/workspace');
-				await clientInstance.writeFile(
-					'/wordpress/workspace/code.php',
-					codeRef.current
-				);
+				const initialPath = '/wordpress/workspace/code.php';
+				await clientInstance.writeFile(initialPath, codeRef.current);
+				dispatch(setCurrentPath(initialPath));
 				await clientInstance.goTo('/workspace/code.php');
 
 				clientRef.current = clientInstance;

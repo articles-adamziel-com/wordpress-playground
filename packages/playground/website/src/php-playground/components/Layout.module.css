@@ -102,6 +102,27 @@
 	min-height: 0;
 }
 
+.filePathBar {
+	box-sizing: border-box;
+	padding: 6px 10px;
+	background: #fafafa;
+	border-bottom: 1px solid #eee;
+	color: #666;
+	font-family: 'SF Mono', Monaco, 'Cascadia Code', 'Roboto Mono', Consolas,
+		'Courier New', monospace;
+	font-size: 12px;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+.filePathText {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	display: inline-block;
+	max-width: 100%;
+}
+
 .editorSplitGroup {
 	flex: 1;
 	display: flex;

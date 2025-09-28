@@ -11,7 +11,7 @@ import PlaygroundFilePickerTree from './PlaygroundFilePickerTree';
 import { PlaygroundManager } from './PlaygroundManager';
 import { Terminal } from './Terminal';
 import { useAppDispatch, useAppSelector } from '../hooks';
-import { setCode } from '../store';
+import { setCode, setCurrentPath } from '../store';
 
 export const Layout = () => {
 	const [isHelpOpen, setHelpOpen] = useState(false);
@@ -20,6 +20,7 @@ export const Layout = () => {
 	const terminalPanelRef = useRef<ImperativePanelHandle | null>(null);
 	const playgroundClient = useAppSelector((state) => state.playground.client);
 	const bootStatus = useAppSelector((state) => state.playground.bootStatus);
+	const currentPath = useAppSelector((state) => state.playground.currentPath);
 
 	useEffect(() => {
 		const previousTitle = document.title;
@@ -79,8 +80,10 @@ export const Layout = () => {
 													'File too large to be edited'
 												)
 											);
+											dispatch(setCurrentPath(null));
 										} else {
 											dispatch(setCode(text));
+											dispatch(setCurrentPath(path));
 										}
 									}}
 								/>
@@ -102,6 +105,18 @@ export const Layout = () => {
 								style={{ overflow: 'auto' }}
 							>
 								<div className={styles.editorContent}>
+									{currentPath && (
+										<div
+											className={styles.filePathBar}
+											title={currentPath}
+										>
+											<span
+												className={styles.filePathText}
+											>
+												{currentPath}
+											</span>
+										</div>
+									)}
 									<EditorHost />
 								</div>
 							</Panel>
