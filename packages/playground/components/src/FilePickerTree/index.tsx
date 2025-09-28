@@ -378,6 +378,17 @@ export const FilePickerTree = forwardRef<
 	);
 
 	const hasInitializedRef = useRef(false);
+	const pendingInitialExpandRef = useRef<string | null>(initialPath ?? null);
+	const previousInitialPathRef = useRef(initialPath);
+
+	useEffect(() => {
+		if (initialPath && initialPath !== previousInitialPathRef.current) {
+			pendingInitialExpandRef.current = initialPath;
+		} else if (!initialPath) {
+			pendingInitialExpandRef.current = null;
+		}
+		previousInitialPathRef.current = initialPath;
+	}, [initialPath]);
 	useEffect(() => {
 		if (!initialPath || hasInitializedRef.current) {
 			return;
@@ -398,6 +409,15 @@ export const FilePickerTree = forwardRef<
 			void expandToPath(initialPath);
 		}
 	}, [initialPath, expandToPath, onLoadChildren]);
+
+	useEffect(() => {
+		const target = pendingInitialExpandRef.current;
+		if (!target || !onLoadChildren || files.length === 0) {
+			return;
+		}
+		pendingInitialExpandRef.current = null;
+		void expandToPath(target);
+	}, [files, expandToPath, onLoadChildren]);
 
 	useEffect(() => {
 		if (!focusedPath) {

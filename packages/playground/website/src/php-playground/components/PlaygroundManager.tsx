@@ -165,7 +165,7 @@ export const PlaygroundManager = () => {
 				const initialPath = '/wordpress/workspace/code.php';
 				await clientInstance.writeFile(initialPath, codeRef.current);
 				dispatch(setCurrentPath(initialPath));
-				await clientInstance.goTo('/wordpress/workspace/code.php');
+				await clientInstance.goTo('/workspace/code.php');
 
 				clientRef.current = clientInstance;
 				dispatch(setClient(clientInstance));
