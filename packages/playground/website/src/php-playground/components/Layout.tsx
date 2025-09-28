@@ -8,7 +8,7 @@ import styles from './layout.module.css';
 import { Controls } from './Controls';
 import { EditorHost } from './EditorHost';
 import { HelpModal } from './HelpModal';
-import FileExplorer from './FileExplorer';
+import FileExplorerSidebar from './FileExplorerSidebar';
 import { PlaygroundManager } from './PlaygroundManager';
 import { Terminal } from './Terminal';
 import { useAppSelector } from '../hooks';
@@ -75,7 +75,7 @@ export const Layout = () => {
 					<Panel minSize={5} collapsible>
 						<div className={styles.editorPane}>
 							{bootStatus === 'ready' && playgroundClient ? (
-								<FileExplorer
+								<FileExplorerSidebar
 									playgroundClient={playgroundClient}
 									currentPath={currentPath}
 									selectedDirPath={selectedDirPath}

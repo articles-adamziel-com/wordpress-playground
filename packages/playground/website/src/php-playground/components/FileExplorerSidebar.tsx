@@ -1,0 +1,172 @@
+import React, { useMemo, useRef } from 'react';
+import styles from './layout.module.css';
+import PlaygroundFilePickerTree, {
+	type PlaygroundFilePickerTreeRef,
+} from './PlaygroundFilePickerTree';
+import type { PlaygroundClient } from '@wp-playground/client';
+import { useAppDispatch } from '../hooks';
+import { setCode, setCurrentPath } from '../store';
+
+const MAX_INLINE_BYTES = 1024 * 1024; // 1MB
+
+const normalizeFsPath = (path: string) => {
+	if (!path) {
+		return '/';
+	}
+	let normalized = path.replace(/\\+/g, '/');
+	if (!normalized.startsWith('/')) {
+		normalized = `/${normalized}`;
+	}
+	normalized = normalized.replace(/\/{2,}/g, '/');
+	if (normalized.length > 1 && normalized.endsWith('/')) {
+		normalized = normalized.slice(0, -1);
+	}
+	return normalized || '/';
+};
+
+const dirnameSafe = (path: string) => {
+	const normalized = normalizeFsPath(path);
+	if (normalized === '/') {
+		return '/';
+	}
+	const index = normalized.lastIndexOf('/');
+	return index <= 0 ? '/' : normalized.slice(0, index);
+};
+
+const isProbablyTextBuffer = (buffer: Uint8Array) => {
+	const len = buffer.byteLength;
+	for (let i = 0; i < Math.min(len, 4096); i++) {
+		if (buffer[i] === 0) {
+			return false;
+		}
+	}
+	try {
+		new TextDecoder('utf-8', { fatal: true }).decode(buffer);
+		return true;
+	} catch {
+		return false;
+	}
+};
+
+const createDownloadUrl = (data: Uint8Array, filename: string) => {
+	const blob = new Blob([data]);
+	const url = URL.createObjectURL(blob);
+	setTimeout(() => URL.revokeObjectURL(url), 60_000);
+	return { url, filename };
+};
+
+export default function FileExplorerSidebar({
+	playgroundClient,
+	currentPath,
+	selectedDirPath,
+	setSelectedDirPath,
+	forceSelectedPath,
+	setForceSelectedPath,
+}: {
+	playgroundClient: PlaygroundClient | null;
+	currentPath: string | null;
+	selectedDirPath: string | null;
+	setSelectedDirPath: React.Dispatch<React.SetStateAction<string | null>>;
+	forceSelectedPath: string | null;
+	setForceSelectedPath: React.Dispatch<React.SetStateAction<string | null>>;
+}) {
+	const treeRef = useRef<PlaygroundFilePickerTreeRef | null>(null);
+	const dispatch = useAppDispatch();
+
+	const treeInitialPath = useMemo(() => {
+		return normalizeFsPath(
+			forceSelectedPath ??
+				selectedDirPath ??
+				(currentPath
+					? dirnameSafe(currentPath)
+					: '/wordpress/workspace')
+		);
+	}, [forceSelectedPath, selectedDirPath, currentPath]);
+
+	return (
+		<div className={styles.fileExplorerContainer}>
+			<div className={styles.fileExplorerHeader}>
+				<span className={styles.fileExplorerTitle}>Files</span>
+				<div className={styles.fileExplorerActions}>
+					<button
+						className={styles.fileExplorerButton}
+						onClick={() => treeRef.current?.createFile()}
+						title="Create new file"
+						disabled={!playgroundClient}
+					>
+						New File
+					</button>
+					<button
+						className={styles.fileExplorerButton}
+						onClick={() => treeRef.current?.createFolder()}
+						title="Create new folder"
+						disabled={!playgroundClient}
+					>
+						New Folder
+					</button>
+				</div>
+			</div>
+			<div className={styles.fileExplorerTree}>
+				<PlaygroundFilePickerTree
+					ref={treeRef}
+					playgroundClient={playgroundClient ?? undefined}
+					root="/"
+					initialPath={treeInitialPath}
+					excludePaths={['/dev', '/internal', '/proc', '/request']}
+					onSelect={async (path) => {
+						setForceSelectedPath(null);
+						if (
+							playgroundClient &&
+							(await playgroundClient.isDir(path))
+						) {
+							setSelectedDirPath(path);
+							return;
+						}
+						if (!playgroundClient) return;
+						try {
+							const data =
+								await playgroundClient.readFileAsBuffer(path);
+							const size = data.byteLength;
+							if (size > MAX_INLINE_BYTES) {
+								const { url, filename } = createDownloadUrl(
+									data,
+									path.split('/').pop() || 'download'
+								);
+								dispatch(
+									setCode(
+										`File too large to open (>1MB)\nDownload: ${url}\nFilename: ${filename}`
+									)
+								);
+								dispatch(setCurrentPath(null));
+								setSelectedDirPath(dirnameSafe(path));
+								return;
+							}
+							if (!isProbablyTextBuffer(data)) {
+								const { url, filename } = createDownloadUrl(
+									data,
+									path.split('/').pop() || 'download'
+								);
+								dispatch(
+									setCode(
+										`binary file. can't edit (download): ${url}\nFilename: ${filename}`
+									)
+								);
+								dispatch(setCurrentPath(null));
+								setSelectedDirPath(dirnameSafe(path));
+								return;
+							}
+							const text = new TextDecoder('utf-8').decode(data);
+							dispatch(setCode(text));
+							dispatch(setCurrentPath(path));
+							setSelectedDirPath(dirnameSafe(path));
+						} catch {
+							dispatch(setCode('Could not open file'));
+							dispatch(setCurrentPath(null));
+							setSelectedDirPath(dirnameSafe(path));
+						}
+					}}
+				/>
+			</div>
+		</div>
+	);
+}
