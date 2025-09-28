@@ -1,3 +1,4 @@
+/* eslint-disable react-hooks/exhaustive-deps */
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import type { FileNode } from '@wp-playground/components';
 import { FilePickerTree as CoreFilePickerTree } from '@wp-playground/components';
@@ -113,7 +114,12 @@ export default function PlaygroundFilePickerTree({
 		return () => {
 			cancelled = true;
 		};
-	}, [normalizedRoot, rootName, playgroundClient, excludePaths]);
+	}, [
+		normalizedRoot,
+		rootName,
+		playgroundClient,
+		JSON.stringify(excludePaths),
+	]);
 
 	const coreInitialPath = useMemo(() => {
 		return initialPath

@@ -71,6 +71,7 @@ export const Terminal = ({ isCollapsed, resizeToken = 0 }: TerminalProps) => {
 	const terminalContainerRef = useRef<HTMLDivElement | null>(null);
 	const fitAddonRef = useRef<FitAddon | null>(null);
 	const progressRef = useRef<DownloadProgress | null>(null);
+	const cwdRef = useRef<string>('/wordpress');
 
 	useEffect(() => {
 		const container = terminalContainerRef.current;
@@ -126,22 +127,21 @@ export const Terminal = ({ isCollapsed, resizeToken = 0 }: TerminalProps) => {
 			});
 		};
 
-		const DEFAULT_CWD = '/wordpress';
-		let currentWorkingDirectory = DEFAULT_CWD;
+		let currentWorkingDirectory = cwdRef.current;
 		const promptPrefix = () => {
 			const dirName = basename(currentWorkingDirectory) || '/';
 			return `(${dirName}) $ `;
 		};
 		const resolvePath = (target: string) => {
 			if (!target || target === '~') {
-				return DEFAULT_CWD;
+				return cwdRef.current;
 			}
 			if (target.startsWith('~/')) {
-				target = joinPaths(DEFAULT_CWD, target.slice(2));
+				target = joinPaths(cwdRef.current, target.slice(2));
 			}
 			const rawPath = target.startsWith('/')
 				? target
-				: joinPaths(currentWorkingDirectory, target);
+				: joinPaths(cwdRef.current, target);
 			return normalizePath(rawPath || '/');
 		};
 
@@ -341,10 +341,10 @@ require_once __FILE__ . '.bin';
 			options: { env?: Record<string, string> } = {}
 		) => {
 			const client = await ensureBootReady();
-			const response = (await client.cli(
-				argv,
-				options
-			)) as StreamedPHPResponse & {
+			const response = (await client.cli(argv, {
+				...options,
+				cwd: cwdRef.current,
+			})) as StreamedPHPResponse & {
 				terminate?: () => Promise<void> | void;
 			};
 			const stdoutReader = response.stdout.getReader();
@@ -497,18 +497,23 @@ require_once __FILE__ . '.bin';
 						);
 						autoScroll();
 					} else {
-						currentWorkingDirectory = resolvedPath;
+						cwdRef.current = resolvedPath;
 					}
 					prompt();
 					commandPrompted = true;
 				} else if (command === 'wp') {
 					await ensureWpCliBinary();
-					const result = await runCli([
-						'php',
-						'/tmp/wp-cli.phar',
-						'--path=/wordpress',
-						...args,
-					]);
+					const result = await runCli(
+						[
+							'php',
+							'/tmp/wp-cli.phar',
+							'--path=/wordpress',
+							...args,
+						],
+						{
+							cwd: cwdRef.current,
+						}
+					);
 					if (!result.aborted && result.exitCode !== 0) {
 						term.writeln(
 							`\r\nProcess exited with code ${result.exitCode}`

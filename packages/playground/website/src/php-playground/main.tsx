@@ -19,6 +19,17 @@
  * * Editor
  *    * ✅ Save changes when editing files other than code.php
  *    * ✅ Display breadcrumbs of the currently open file above the editor?
+ * * Terminal
+ *    * Implement cwd, cd
+ *    * ✅ Communicate cwd in current prompt (like fish)
+ *    * ✅ Disable terminal collapsing for now
+ *    * ------- later: -------
+ *    * Tab completion for paths
+ *    * Implement basic `curl` and `curl -O` and `wget` to download remote files
+ *    * Implement `git clone` and `git checkout`
+ *    * Implement `unzip` (via PHP `ZipArchive`)
+ *
+ * ------- later: -------
  * * UX for sharing more involved setups, e.g. when I edit a WordPress plugin
  *   and not just the code snippet (Maybe connect GitHub and save diff in a
  *   repository or in a gist?)
@@ -31,14 +42,6 @@
  *    * Or display a modal "Hey, this is the limit of the shareable URL. It won't be updated
  *      anymore until you connect Github or so".
  * * Tool palette (file browser, environment setup form with wp+php versions, Blueprint editor)
- * * Terminal
- *    * Disable terminal collapsing for now
- *    * Implement cwd, cd
- *    * Tab completion for paths
- *    * Implement basic `curl` and `curl -O` and `wget` to download remote files
- *    * Implement `git clone` and `git checkout`
- *    * Implement `unzip` (via PHP `ZipArchive`)
- *    * ✅ Communicate cwd in current prompt (like fish)
  * * Integrate with Playground.wordpress.net – bring over a tool
  *   palette (file browser, sites browser, Blueprints browser).
  * * A way to run composer install by default (simply via Blueprints?)
