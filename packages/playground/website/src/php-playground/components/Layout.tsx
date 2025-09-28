@@ -9,6 +9,7 @@ import { Controls } from './Controls';
 import { EditorHost } from './EditorHost';
 import { HelpModal } from './HelpModal';
 import PlaygroundFilePickerTree from './PlaygroundFilePickerTree';
+import type { FileNode } from '@wp-playground/components';
 import { PlaygroundManager } from './PlaygroundManager';
 import { Terminal } from './Terminal';
 import { useAppDispatch, useAppSelector } from '../hooks';
@@ -16,6 +17,7 @@ import { setCode, setCurrentPath } from '../store';
 import AddressBar from '../../components/address-bar';
 
 const DEFAULT_WORKSPACE_DIR = '/wordpress/workspace';
+const MAX_INLINE_BYTES = 1024 * 1024; // 1MB
 
 const normalizeFsPath = (path: string) => {
 	if (!path) {
@@ -43,11 +45,45 @@ const dirnameSafe = (path: string) => {
 
 // removed legacy prompt-based helpers in favor of inline rename flow
 
+const isValidNameSegment = (name: string) => {
+	if (!name) {
+		return false;
+	}
+	if (name === '.' || name === '..') {
+		return false;
+	}
+	return !/[\\/]/.test(name);
+};
+
+const isProbablyTextBuffer = (buffer: Uint8Array) => {
+	// Fast null-byte check
+	const len = buffer.byteLength;
+	for (let i = 0; i < Math.min(len, 4096); i++) {
+		if (buffer[i] === 0) {
+			return false;
+		}
+	}
+	// UTF-8 validation
+	try {
+		new TextDecoder('utf-8', { fatal: true }).decode(buffer);
+		return true;
+	} catch {
+		return false;
+	}
+};
+
+const createDownloadUrl = (data: Uint8Array, filename: string) => {
+	const blob = new Blob([data]);
+	const url = URL.createObjectURL(blob);
+	// Best-effort cleanup later
+	setTimeout(() => URL.revokeObjectURL(url), 60_000);
+	return { url, filename };
+};
+
 export const Layout = () => {
 	const [isHelpOpen, setHelpOpen] = useState(false);
 	const [isTerminalCollapsed, setTerminalCollapsed] = useState(false);
 	const [terminalResizeToken, setTerminalResizeToken] = useState(0);
-	const [fileTreeRefreshToken, setFileTreeRefreshToken] = useState(0);
 	const terminalPanelRef = useRef<ImperativePanelHandle | null>(null);
 	const playgroundClient = useAppSelector((state) => state.playground.client);
 	const bootStatus = useAppSelector((state) => state.playground.bootStatus);
@@ -55,10 +91,21 @@ export const Layout = () => {
 	const [previewUrl, setPreviewUrl] = useState('');
 	const navigationClientRef = useRef<PlaygroundClient | null>(null);
 	const [renamingPath, setRenamingPath] = useState<string | null>(null);
-	const [selectedDirPath, setSelectedDirPath] = useState<string | null>(null);
+	const [selectedDirPath, setSelectedDirPath] = useState<string | null>(
+		DEFAULT_WORKSPACE_DIR
+	);
+	const [forceSelectedPath, setForceSelectedPath] = useState<string | null>(
+		null
+	);
 	const pendingCreateRef = useRef<{
 		type: 'file' | 'folder';
 		tempPath: string;
+	} | null>(null);
+	const [contextMenu, setContextMenu] = useState<{
+		path: string;
+		type: 'file' | 'folder';
+		x: number;
+		y: number;
 	} | null>(null);
 
 	const dispatch = useAppDispatch();
@@ -76,8 +123,12 @@ export const Layout = () => {
 				}
 				return { stem: n, ext: '' };
 			};
+			const prefix = baseDir === '/' ? '' : baseDir;
 			while (
-				await client.fileExists(`${baseDir}/${name}`).catch(() => false)
+				(await client
+					.fileExists(`${prefix}/${name}`)
+					.catch(() => false)) ||
+				(await client.isDir(`${prefix}/${name}`).catch(() => false))
 			) {
 				counter += 1;
 				const { stem, ext } = splitExt(baseName);
@@ -88,14 +139,10 @@ export const Layout = () => {
 		[]
 	);
 
-	const ensureParentExpandedPath = useCallback(
-		(path: string) => {
-			const parent = dirnameSafe(path);
-			dispatch(setCurrentPath(parent));
-			setSelectedDirPath(parent);
-		},
-		[dispatch]
-	);
+	const ensureParentExpandedPath = useCallback((path: string) => {
+		const parent = dirnameSafe(path);
+		setSelectedDirPath(parent);
+	}, []);
 
 	useEffect(() => {
 		const previousTitle = document.title;
@@ -104,6 +151,26 @@ export const Layout = () => {
 			document.title = previousTitle;
 		};
 	}, []);
+
+	useEffect(() => {
+		if (!contextMenu) {
+			return;
+		}
+		const handleClose = () => setContextMenu(null);
+		const handleKey = (event: KeyboardEvent) => {
+			if (event.key === 'Escape') {
+				handleClose();
+			}
+		};
+		window.addEventListener('click', handleClose);
+		window.addEventListener('contextmenu', handleClose);
+		window.addEventListener('keydown', handleKey);
+		return () => {
+			window.removeEventListener('click', handleClose);
+			window.removeEventListener('contextmenu', handleClose);
+			window.removeEventListener('keydown', handleKey);
+		};
+	}, [contextMenu]);
 
 	useEffect(() => {
 		if (!isHelpOpen) {
@@ -149,10 +216,6 @@ export const Layout = () => {
 	const handleOpenHelp = useCallback(() => setHelpOpen(true), []);
 	const handleCloseHelp = useCallback(() => setHelpOpen(false), []);
 
-	const handleTreeRefresh = useCallback(() => {
-		setFileTreeRefreshToken((token) => token + 1);
-	}, []);
-
 	const handleCreateFile = useCallback(async () => {
 		if (!playgroundClient) {
 			return;
@@ -167,7 +230,7 @@ export const Layout = () => {
 			const name = await findAvailableName(
 				playgroundClient,
 				normalizedBase,
-				'untitled'
+				'untitled.php'
 			);
 			const tempPath = `${
 				normalizedBase === '/' ? '' : normalizedBase
@@ -175,8 +238,10 @@ export const Layout = () => {
 			await playgroundClient.writeFile(tempPath, '');
 			pendingCreateRef.current = { type: 'file', tempPath };
 			setRenamingPath(tempPath);
+			setForceSelectedPath(tempPath);
 			ensureParentExpandedPath(tempPath);
-			handleTreeRefresh();
+			setSelectedDirPath(dirnameSafe(tempPath));
+			setContextMenu(null);
 		} catch (e) {
 			void e;
 		}
@@ -186,7 +251,6 @@ export const Layout = () => {
 		selectedDirPath,
 		findAvailableName,
 		ensureParentExpandedPath,
-		handleTreeRefresh,
 	]);
 
 	const handleCreateDirectory = useCallback(async () => {
@@ -211,8 +275,10 @@ export const Layout = () => {
 			await playgroundClient.mkdir(tempPath);
 			pendingCreateRef.current = { type: 'folder', tempPath };
 			setRenamingPath(tempPath);
+			setForceSelectedPath(tempPath);
 			ensureParentExpandedPath(tempPath);
-			handleTreeRefresh();
+			setSelectedDirPath(tempPath);
+			setContextMenu(null);
 		} catch (e) {
 			void e;
 		}
@@ -222,73 +288,79 @@ export const Layout = () => {
 		selectedDirPath,
 		findAvailableName,
 		ensureParentExpandedPath,
-		handleTreeRefresh,
 	]);
 
 	const handleRenameSubmit = useCallback(
 		async (path: string, newName: string) => {
-			if (!playgroundClient || !pendingCreateRef.current) {
-				setRenamingPath(null);
+			if (!playgroundClient) {
 				return;
 			}
+			const pending = pendingCreateRef.current;
+			const isPending = pending?.tempPath === path;
 			const parent = dirnameSafe(path);
 			const sanitized = (newName || '').trim();
-			if (
-				!sanitized ||
-				sanitized.includes('/') ||
-				sanitized === '.' ||
-				sanitized === '..'
-			) {
-				// Treat invalid name as cancel
-				try {
-					if (pendingCreateRef.current.type === 'folder') {
-						await playgroundClient.rmdir(path, {
-							recursive: true,
-						} as any);
-					} else {
-						await playgroundClient.unlink(path);
+			if (!isValidNameSegment(sanitized)) {
+				if (isPending) {
+					try {
+						if (pending.type === 'folder') {
+							await playgroundClient.rmdir(path, {
+								recursive: true,
+							} as any);
+						} else {
+							await playgroundClient.unlink(path);
+						}
+					} catch (e) {
+						void e;
 					}
-				} catch (e) {
-					void e;
+					pendingCreateRef.current = null;
 				}
-				setRenamingPath(null);
-				pendingCreateRef.current = null;
-				handleTreeRefresh();
+				setRenamingPath(isPending ? null : path);
 				return;
 			}
 
-			let finalName = sanitized;
-			const splitExt = (n: string) => {
-				const dot = n.lastIndexOf('.');
-				if (dot > 0) {
-					return { stem: n.slice(0, dot), ext: n.slice(dot) };
+			const composePath = (name: string) =>
+				parent === '/' ? `/${name}` : `${parent}/${name}`;
+			const finalName = sanitized;
+			let candidate = composePath(finalName);
+			const candidateNormalized = normalizeFsPath(candidate);
+			if (candidateNormalized === path) {
+				setRenamingPath(null);
+				if (isPending) {
+					pendingCreateRef.current = null;
 				}
-				return { stem: n, ext: '' };
-			};
-			let candidate = `${parent === '/' ? '' : parent}/${finalName}`;
-			if (
-				await playgroundClient.fileExists(candidate).catch(() => false)
-			) {
-				const { stem, ext } = splitExt(finalName);
-				let counter = 1;
-				while (
-					await playgroundClient
-						.fileExists(
-							`${
-								parent === '/' ? '' : parent
-							}/${stem} (${counter})${ext}`
-						)
-						.catch(() => false)
-				) {
-					counter += 1;
-				}
-				finalName = `${stem} (${counter})${ext}`;
-				candidate = `${parent === '/' ? '' : parent}/${finalName}`;
+				setForceSelectedPath(candidateNormalized);
+				return;
 			}
+
+			const exists = await playgroundClient
+				.fileExists(candidateNormalized)
+				.catch(() => false);
+			const existsDir = await playgroundClient
+				.isDir(candidateNormalized)
+				.catch(() => false);
+			if ((exists || existsDir) && candidateNormalized !== path) {
+				if (isPending) {
+					try {
+						const unique = await findAvailableName(
+							playgroundClient,
+							parent === '/' ? '/' : parent,
+							finalName
+						);
+						candidate = composePath(unique);
+					} catch (e) {
+						void e;
+					}
+				} else {
+					setRenamingPath(path);
+					return;
+				}
+			}
+
+			let candidateIsDir = pending?.type === 'folder';
 
 			try {
 				await playgroundClient.mv(path, candidate as any);
-				if (pendingCreateRef.current.type === 'file') {
+				if (pending?.type === 'file') {
 					try {
 						const newContent =
 							await playgroundClient.readFileAsText(candidate);
@@ -297,37 +369,62 @@ export const Layout = () => {
 					} catch (e) {
 						void e;
 					}
-				}
-			} catch (e) {
-				void e;
-				// If rename fails, try to clean up temp
-				try {
-					if (pendingCreateRef.current.type === 'folder') {
-						await playgroundClient.rmdir(path, {
-							recursive: true,
-						} as any);
-					} else {
-						await playgroundClient.unlink(path);
+				} else if (!pending) {
+					const isDir = await playgroundClient
+						.isDir(candidate as any)
+						.catch(() => false);
+					candidateIsDir = isDir;
+					if (!isDir) {
+						try {
+							const newContent =
+								await playgroundClient.readFileAsText(
+									candidate
+								);
+							dispatch(setCode(newContent));
+							dispatch(setCurrentPath(candidate));
+						} catch {
+							// Ignore failure
+						}
+					} else if (currentPath === path) {
+						dispatch(setCurrentPath(candidate));
 					}
-				} catch (cleanupError) {
-					void cleanupError;
 				}
+				setForceSelectedPath(candidate);
+				setSelectedDirPath(
+					candidateIsDir ? candidate : dirnameSafe(candidate)
+				);
+			} catch {
+				if (isPending) {
+					try {
+						if (pending?.type === 'folder') {
+							await playgroundClient.rmdir(path, {
+								recursive: true,
+							} as any);
+						} else {
+							await playgroundClient.unlink(path);
+						}
+					} catch {
+						// Ignore failure
+					}
+				}
+			} finally {
+				pendingCreateRef.current = null;
+				setRenamingPath(null);
 			}
-			setRenamingPath(null);
-			pendingCreateRef.current = null;
-			handleTreeRefresh();
 		},
-		[playgroundClient, dispatch, handleTreeRefresh]
+		[playgroundClient, findAvailableName, dispatch, currentPath]
 	);
 
 	const handleRenameCancel = useCallback(
 		async (path: string) => {
-			if (!playgroundClient || !pendingCreateRef.current) {
+			const pending = pendingCreateRef.current;
+			setContextMenu(null);
+			if (!playgroundClient || pending?.tempPath !== path) {
 				setRenamingPath(null);
 				return;
 			}
 			try {
-				if (pendingCreateRef.current.type === 'folder') {
+				if (pending.type === 'folder') {
 					await playgroundClient.rmdir(path, {
 						recursive: true,
 					} as any);
@@ -337,12 +434,141 @@ export const Layout = () => {
 			} catch (e) {
 				void e;
 			}
-			setRenamingPath(null);
 			pendingCreateRef.current = null;
-			handleTreeRefresh();
+			setRenamingPath(null);
+			setForceSelectedPath(null);
+			setSelectedDirPath((prev) => {
+				if (!prev) {
+					return prev;
+				}
+				const normalized = normalizeFsPath(path);
+				if (prev === normalized || prev.startsWith(`${normalized}/`)) {
+					return dirnameSafe(normalized);
+				}
+				return prev;
+			});
 		},
-		[playgroundClient, handleTreeRefresh]
+		[playgroundClient]
 	);
+
+	const handleContextMenuRename = useCallback(
+		(path: string) => {
+			pendingCreateRef.current = null;
+			setContextMenu(null);
+			setRenamingPath(path);
+			setForceSelectedPath(path);
+			setSelectedDirPath(dirnameSafe(path));
+			ensureParentExpandedPath(path);
+		},
+		[ensureParentExpandedPath]
+	);
+
+	const handleDeletePath = useCallback(
+		async (targetPath: string, type: 'file' | 'folder') => {
+			if (!playgroundClient) {
+				return;
+			}
+			const normalized = normalizeFsPath(targetPath);
+			setContextMenu(null);
+			try {
+				if (type === 'folder') {
+					await playgroundClient.rmdir(normalized, {
+						recursive: true,
+					} as any);
+				} else {
+					await playgroundClient.unlink(normalized);
+				}
+			} catch {
+				// Ignore failure
+			}
+			if (pendingCreateRef.current?.tempPath === normalized) {
+				pendingCreateRef.current = null;
+			}
+			if (
+				currentPath &&
+				(currentPath === normalized ||
+					currentPath.startsWith(`${normalized}/`))
+			) {
+				dispatch(setCode(''));
+				dispatch(setCurrentPath(null));
+			}
+			if (
+				selectedDirPath &&
+				(selectedDirPath === normalized ||
+					selectedDirPath.startsWith(`${normalized}/`))
+			) {
+				setSelectedDirPath(dirnameSafe(normalized));
+			}
+			setRenamingPath(null);
+			setForceSelectedPath(dirnameSafe(normalized));
+		},
+		[playgroundClient, currentPath, selectedDirPath, dispatch]
+	);
+
+	const handleDownloadPath = useCallback(
+		async (targetPath: string) => {
+			if (!playgroundClient) {
+				return;
+			}
+			setContextMenu(null);
+			try {
+				const content = await playgroundClient.readFileAsText(
+					targetPath
+				);
+				const blob = new Blob([content], {
+					type: 'text/plain;charset=utf-8',
+				});
+				const url = URL.createObjectURL(blob);
+				const link = document.createElement('a');
+				link.href = url;
+				link.download =
+					normalizeFsPath(targetPath).split('/').pop() || 'template';
+				document.body.appendChild(link);
+				link.click();
+				link.remove();
+				URL.revokeObjectURL(url);
+			} catch {
+				// Ignore failure
+			}
+		},
+		[playgroundClient]
+	);
+
+	const handleTreeContextMenu = useCallback(
+		(event: React.MouseEvent, node: FileNode, path: string) => {
+			event.preventDefault();
+			event.stopPropagation();
+			const absolute = normalizeFsPath(path);
+			setRenamingPath(null);
+			setContextMenu({
+				path: absolute,
+				type: node.type,
+				x: event.clientX,
+				y: event.clientY,
+			});
+		},
+		[renamingPath]
+	);
+
+	const treeInitialPath = normalizeFsPath(
+		renamingPath ??
+			forceSelectedPath ??
+			selectedDirPath ??
+			(currentPath ? dirnameSafe(currentPath) : DEFAULT_WORKSPACE_DIR)
+	);
+
+	const contextMenuStyle = contextMenu
+		? {
+				left:
+					typeof window === 'undefined'
+						? contextMenu.x
+						: Math.min(contextMenu.x, window.innerWidth - 200),
+				top:
+					typeof window === 'undefined'
+						? contextMenu.y
+						: Math.min(contextMenu.y, window.innerHeight - 140),
+		  }
+		: undefined;
 
 	return (
 		<div id="php-playground-react-root" className={styles.root}>
@@ -390,15 +616,7 @@ export const Layout = () => {
 										<PlaygroundFilePickerTree
 											playgroundClient={playgroundClient}
 											root="/"
-											initialPath={
-												renamingPath
-													? dirnameSafe(renamingPath)
-													: selectedDirPath
-													? selectedDirPath
-													: currentPath
-													? dirnameSafe(currentPath)
-													: DEFAULT_WORKSPACE_DIR
-											}
+											initialPath={treeInitialPath}
 											excludePaths={[
 												'/dev',
 												'/internal',
@@ -406,6 +624,8 @@ export const Layout = () => {
 												'/request',
 											]}
 											onSelect={async (path) => {
+												setContextMenu(null);
+												setForceSelectedPath(null);
 												if (
 													await playgroundClient.isDir(
 														path
@@ -414,20 +634,71 @@ export const Layout = () => {
 													setSelectedDirPath(path);
 													return;
 												}
-												const text =
-													await playgroundClient.readFileAsText(
-														path
-													);
-												if (text.length > 1024 * 1024) {
-													dispatch(
-														setCode(
-															'File too large to be edited'
+												try {
+													const data =
+														await playgroundClient.readFileAsBuffer(
+															path
+														);
+													const size =
+														data.byteLength;
+													if (
+														size > MAX_INLINE_BYTES
+													) {
+														const {
+															url,
+															filename,
+														} = createDownloadUrl(
+															data,
+															path
+																.split('/')
+																.pop() ||
+																'download'
+														);
+														dispatch(
+															setCode(
+																`File too large to open (>1MB)\nDownload: ${url}\nFilename: ${filename}`
+															)
+														);
+														dispatch(
+															setCurrentPath(null)
+														);
+														setSelectedDirPath(
+															dirnameSafe(path)
+														);
+														return;
+													}
+													if (
+														!isProbablyTextBuffer(
+															data
 														)
-													);
-													dispatch(
-														setCurrentPath(null)
-													);
-												} else {
+													) {
+														const {
+															url,
+															filename,
+														} = createDownloadUrl(
+															data,
+															path
+																.split('/')
+																.pop() ||
+																'download'
+														);
+														dispatch(
+															setCode(
+																`binary file. can't edit (download): ${url}\nFilename: ${filename}`
+															)
+														);
+														dispatch(
+															setCurrentPath(null)
+														);
+														setSelectedDirPath(
+															dirnameSafe(path)
+														);
+														return;
+													}
+													const text =
+														new TextDecoder(
+															'utf-8'
+														).decode(data);
 													dispatch(setCode(text));
 													dispatch(
 														setCurrentPath(path)
@@ -435,19 +706,26 @@ export const Layout = () => {
 													setSelectedDirPath(
 														dirnameSafe(path)
 													);
+												} catch {
+													dispatch(
+														setCode(
+															'Could not open file'
+														)
+													);
+													dispatch(
+														setCurrentPath(null)
+													);
+													setSelectedDirPath(
+														dirnameSafe(path)
+													);
 												}
 											}}
 											renamingPath={renamingPath}
-											onRename={(path, newName) => {
-												void handleRenameSubmit(
-													path,
-													newName
-												);
-											}}
-											onRenameCancel={(path) => {
-												void handleRenameCancel(path);
-											}}
-											refreshToken={fileTreeRefreshToken}
+											onRename={handleRenameSubmit}
+											onRenameCancel={handleRenameCancel}
+											onContextMenu={
+												handleTreeContextMenu
+											}
 										/>
 									</div>
 								</div>
@@ -539,6 +817,42 @@ export const Layout = () => {
 				</Panel>
 			</PanelGroup>
 			<HelpModal isOpen={isHelpOpen} onRequestClose={handleCloseHelp} />
+			{contextMenu && contextMenuStyle && (
+				<div
+					className={styles.contextMenu}
+					style={contextMenuStyle}
+					onClick={(event) => event.stopPropagation()}
+					onContextMenu={(event) => event.preventDefault()}
+				>
+					<button
+						className={styles.contextMenuButton}
+						onClick={() =>
+							handleContextMenuRename(contextMenu.path)
+						}
+					>
+						Rename
+					</button>
+					<button
+						className={clsx(
+							styles.contextMenuButton,
+							styles.contextMenuButtonDanger
+						)}
+						onClick={() =>
+							handleDeletePath(contextMenu.path, contextMenu.type)
+						}
+					>
+						Delete
+					</button>
+					{contextMenu.type === 'file' && (
+						<button
+							className={styles.contextMenuButton}
+							onClick={() => handleDownloadPath(contextMenu.path)}
+						>
+							Download
+						</button>
+					)}
+				</div>
+			)}
 		</div>
 	);
 };

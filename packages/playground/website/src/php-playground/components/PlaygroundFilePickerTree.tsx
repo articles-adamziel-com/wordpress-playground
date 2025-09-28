@@ -69,20 +69,24 @@ export default function PlaygroundFilePickerTree({
 	excludePaths,
 	onSelect,
 	playgroundClient,
-	refreshToken = 0,
 	renamingPath,
 	onRename,
 	onRenameCancel,
+	onContextMenu,
 }: {
 	root?: string;
 	initialPath?: string;
 	excludePaths?: string[];
 	onSelect?: (path: string) => void;
 	playgroundClient?: PlaygroundClient;
-	refreshToken?: number;
 	renamingPath?: string | null;
 	onRename?: (path: string, newName: string) => void;
 	onRenameCancel?: (path: string) => void;
+	onContextMenu?: (
+		event: React.MouseEvent,
+		node: FileNode,
+		path: string
+	) => void;
 }) {
 	const normalizedRoot = useMemo(() => normalizePath(root), [root]);
 	const rootName = useMemo(
@@ -92,6 +96,43 @@ export default function PlaygroundFilePickerTree({
 
 	const [files, setFiles] = useState<FileNode[]>([]);
 	const [isRootLoading, setIsRootLoading] = useState(false);
+
+	const getDirname = useCallback((path: string) => {
+		const p = normalizePath(path);
+		if (p === '/') return '/';
+		const i = p.lastIndexOf('/');
+		return i <= 0 ? '/' : p.slice(0, i);
+	}, []);
+
+	const getBasename = useCallback((path: string) => {
+		const p = normalizePath(path);
+		if (p === '/') return '/';
+		const i = p.lastIndexOf('/');
+		return i < 0 ? p : p.slice(i + 1);
+	}, []);
+
+	const prioritizeRenaming = useCallback(
+		(
+			items: { name: string; type: 'file' | 'folder' }[],
+			absDirPath: string
+		) => {
+			if (!renamingPath) return items;
+			const renPath = normalizePath(renamingPath);
+			if (getDirname(renPath) !== absDirPath) return items;
+			const targetName = getBasename(renPath);
+			const idx = items.findIndex((i) => i.name === targetName);
+			if (idx === -1) return items;
+			const copy = items.slice();
+			const [entry] = copy.splice(idx, 1);
+			const dirs = copy.filter((i) => i.type === 'folder');
+			const filesOnly = copy.filter((i) => i.type === 'file');
+			if (entry.type === 'folder') {
+				return [entry, ...dirs, ...filesOnly];
+			}
+			return [...dirs, entry, ...filesOnly];
+		},
+		[renamingPath, getDirname, getBasename]
+	);
 
 	useEffect(() => {
 		let cancelled = false;
@@ -108,7 +149,8 @@ export default function PlaygroundFilePickerTree({
 					const childAbs = `/${item.name}`;
 					return !excludePaths?.includes(childAbs);
 				});
-				if (!cancelled) setFiles(filtered as FileNode[]);
+				const ordered = prioritizeRenaming(filtered, '/');
+				if (!cancelled) setFiles(ordered as FileNode[]);
 				setIsRootLoading(false);
 			} else {
 				if (!cancelled)
@@ -127,7 +169,7 @@ export default function PlaygroundFilePickerTree({
 		rootName,
 		playgroundClient,
 		JSON.stringify(excludePaths),
-		refreshToken,
+		prioritizeRenaming,
 	]);
 
 	const coreInitialPath = useMemo(() => {
@@ -148,9 +190,9 @@ export default function PlaygroundFilePickerTree({
 						: `${absDirPath}/${item.name}`;
 				return !excludePaths?.includes(childAbs);
 			});
-			return filtered as FileNode[];
+			return prioritizeRenaming(filtered, absDirPath) as FileNode[];
 		},
-		[playgroundClient, normalizedRoot, excludePaths]
+		[playgroundClient, normalizedRoot, excludePaths, prioritizeRenaming]
 	);
 
 	const handleSelect = useCallback(
@@ -162,7 +204,6 @@ export default function PlaygroundFilePickerTree({
 
 	return (
 		<CoreFilePickerTree
-			key={refreshToken}
 			files={files}
 			initialPath={coreInitialPath}
 			onSelect={handleSelect}
@@ -184,6 +225,16 @@ export default function PlaygroundFilePickerTree({
 				const absPath = corePathToAbsolute(corePath, normalizedRoot);
 				onRenameCancel(absPath);
 			}}
+			onContextMenu={
+				onContextMenu
+					? (event, node, corePath) =>
+							onContextMenu(
+								event,
+								node as FileNode,
+								corePathToAbsolute(corePath, normalizedRoot)
+							)
+					: undefined
+			}
 		/>
 	);
 }
