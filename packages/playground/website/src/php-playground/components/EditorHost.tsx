@@ -40,6 +40,9 @@ import styles from './layout.module.css';
 export const EditorHost = () => {
 	const dispatch = useAppDispatch();
 	const code = useAppSelector((state) => state.playground.code);
+	// @TODO: tricky – the parent may be renamed, moved, etc. Make
+	//        sure this stays up to date! Never save changes to an
+	//        outdated path!
 	const currentPath = useAppSelector((state) => state.playground.currentPath);
 	const client = useAppSelector((state) => state.playground.client);
 	const editorRef = useRef<HTMLDivElement | null>(null);
@@ -136,7 +139,6 @@ export const EditorHost = () => {
 		}
 		saveTimeoutRef.current = window.setTimeout(() => {
 			// Best-effort save; ignore errors (e.g., read-only files)
-			console.log('saving', currentPath, code);
 			client
 				.writeFile(currentPath, code)
 				.catch(() => {})

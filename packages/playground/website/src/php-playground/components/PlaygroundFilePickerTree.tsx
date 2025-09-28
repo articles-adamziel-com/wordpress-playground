@@ -142,6 +142,11 @@ const PlaygroundFilePickerTree = forwardRef<
 	);
 	const [invalidatePath, setInvalidatePath] = useState<string | null>(null);
 	const [invalidateKey, setInvalidateKey] = useState(0);
+	const [renameMapping, setRenameMapping] = useState<{
+		from: string;
+		to: string;
+	} | null>(null);
+	const [renameKey, setRenameKey] = useState(0);
 	const pendingCreateRef = useRef<{
 		type: 'file' | 'folder';
 		tempPath: string;
@@ -501,6 +506,21 @@ const PlaygroundFilePickerTree = forwardRef<
 						: undefined
 				}
 				invalidateKey={invalidateKey}
+				renameMapping={
+					renameMapping
+						? {
+								from: toCorePath(
+									renameMapping.from,
+									normalizedRoot
+								),
+								to: toCorePath(
+									renameMapping.to,
+									normalizedRoot
+								),
+						  }
+						: undefined
+				}
+				renameKey={renameKey}
 				onRename={async (corePath, newName) => {
 					if (!playgroundClient) return;
 					const absPath = corePathToAbsolute(
@@ -581,6 +601,14 @@ const PlaygroundFilePickerTree = forwardRef<
 							candidateIsDir = isDir;
 						}
 						setLastSelectedPath(candidate);
+						// If a directory was renamed and it was expanded, remap it to keep expanded state
+						if (candidateIsDir) {
+							setRenameMapping({
+								from: absPath,
+								to: candidateNormalized,
+							});
+							setRenameKey((k) => k + 1);
+						}
 						// Update editor state
 						if (candidateIsDir) {
 							if (currentPath === absPath) {

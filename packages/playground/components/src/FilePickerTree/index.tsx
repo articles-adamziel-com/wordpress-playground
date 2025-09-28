@@ -38,6 +38,10 @@ export type FilePickerControlProps = {
 	invalidatePath?: string | null;
 	// Optional: change this to force re-invalidation even if the path is the same
 	invalidateKey?: number;
+	// Optional: remap expanded paths and cached children after a directory rename
+	renameMapping?: { from: string; to: string } | null;
+	// Optional: bump to apply a new rename mapping
+	renameKey?: number;
 };
 
 type ExpandedNodePaths = Record<string, boolean>;
@@ -58,6 +62,8 @@ export const FilePickerTree: React.FC<FilePickerControlProps> = ({
 	autoFocus = true,
 	invalidatePath = null,
 	invalidateKey = 0,
+	renameMapping = null,
+	renameKey = 0,
 }) => {
 	function buildPathChain(path: string): string[] {
 		if (!path) return [];
@@ -242,6 +248,67 @@ export const FilePickerTree: React.FC<FilePickerControlProps> = ({
 				});
 		}
 	}, [invalidatePath, invalidateKey, onLoadChildren, expanded]);
+
+	// Preserve expansion and cached children across directory rename by remapping
+	// path keys from old to new. Also update selection and focus if they were inside.
+	useEffect(() => {
+		if (!renameMapping) {
+			return;
+		}
+		const { from, to } = renameMapping;
+		const withTrailingSlash = from.endsWith('/') ? from : `${from}`;
+		const fromPrefix = withTrailingSlash + (from === '/' ? '' : '/');
+		const remapKey = (key: string): string | null => {
+			if (key === from) return to;
+			if (key.startsWith(fromPrefix)) {
+				return to + key.slice(from.length);
+			}
+			return null;
+		};
+
+		setExpanded((prev) => {
+			let changed = false;
+			const next: ExpandedNodePaths = { ...prev };
+			for (const key of Object.keys(prev)) {
+				const mapped = remapKey(key);
+				if (mapped && mapped !== key) {
+					if (!next[mapped]) {
+						next[mapped] = prev[key];
+					}
+					delete next[key];
+					changed = true;
+				}
+			}
+			return changed ? next : prev;
+		});
+
+		setLazyChildren((prev) => {
+			let changed = false;
+			const next: LoadedChildrenMap = { ...prev };
+			for (const key of Object.keys(prev)) {
+				const mapped = remapKey(key);
+				if (mapped && mapped !== key) {
+					if (next[mapped] === undefined) {
+						next[mapped] = prev[key];
+					}
+					delete next[key];
+					changed = true;
+				}
+			}
+			return changed ? next : prev;
+		});
+
+		setSelectedPath((prev) => {
+			if (!prev) return prev;
+			const mapped = remapKey(prev);
+			return mapped ?? prev;
+		});
+		setFocusedPath((prev) => {
+			if (!prev) return prev;
+			const mapped = remapKey(prev);
+			return mapped ?? prev;
+		});
+	}, [renameKey, renameMapping]);
 
 	// Auto-expand and load the root when it is '/'
 	useEffect(() => {
