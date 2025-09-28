@@ -34,6 +34,10 @@ export type FilePickerControlProps = {
 	onRename?: (path: string, newName: string) => void;
 	onRenameCancel?: (path: string) => void;
 	autoFocus?: boolean;
+	// Optional: invalidate a specific folder path cache and reload its children without remounting
+	invalidatePath?: string | null;
+	// Optional: change this to force re-invalidation even if the path is the same
+	invalidateKey?: number;
 };
 
 type ExpandedNodePaths = Record<string, boolean>;
@@ -52,6 +56,8 @@ export const FilePickerTree: React.FC<FilePickerControlProps> = ({
 	onRename,
 	onRenameCancel,
 	autoFocus = true,
+	invalidatePath = null,
+	invalidateKey = 0,
 }) => {
 	function buildPathChain(path: string): string[] {
 		if (!path) return [];
@@ -207,6 +213,35 @@ export const FilePickerTree: React.FC<FilePickerControlProps> = ({
 		},
 		[expandNode, loadChildrenForPath]
 	);
+
+	// Invalidate a folder's children and refresh them in-place without clearing first,
+	// preventing a brief empty state (visible flicker) during rename/delete/create.
+	useEffect(() => {
+		if (!invalidatePath) {
+			return;
+		}
+		// If it's expanded and we can load, refresh immediately without clearing cache
+		if (onLoadChildren && expanded[invalidatePath]) {
+			setLoadingPaths((prev) => ({
+				...prev,
+				[invalidatePath]: true,
+			}));
+			void onLoadChildren(invalidatePath)
+				.then((children) => {
+					setLazyChildren((prev) => ({
+						...prev,
+						[invalidatePath]: children ?? [],
+					}));
+				})
+				.finally(() => {
+					setLoadingPaths((prev) => {
+						const next = { ...prev };
+						delete next[invalidatePath as string];
+						return next;
+					});
+				});
+		}
+	}, [invalidatePath, invalidateKey, onLoadChildren, expanded]);
 
 	// Auto-expand and load the root when it is '/'
 	useEffect(() => {

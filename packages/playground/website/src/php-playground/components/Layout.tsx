@@ -71,23 +71,21 @@ export const Layout = () => {
 		<div id="php-playground-react-root" className={styles.root}>
 			<PlaygroundManager />
 			<PanelGroup direction="horizontal" id="app" className={styles.app}>
-				<>
-					<Panel minSize={5} collapsible>
-						<div className={styles.editorPane}>
-							{bootStatus === 'ready' && playgroundClient ? (
-								<FileExplorerSidebar
-									playgroundClient={playgroundClient}
-									currentPath={currentPath}
-									selectedDirPath={selectedDirPath}
-									setSelectedDirPath={setSelectedDirPath}
-									forceSelectedPath={forceSelectedPath}
-									setForceSelectedPath={setForceSelectedPath}
-								/>
-							) : null}
-						</div>
-					</Panel>
-					<PanelResizeHandle className={styles.horizontalHandle} />
-				</>
+				<Panel minSize={16} defaultSize={16} collapsible>
+					<div className={styles.editorPane}>
+						{bootStatus === 'ready' && playgroundClient ? (
+							<FileExplorerSidebar
+								playgroundClient={playgroundClient}
+								currentPath={currentPath}
+								selectedDirPath={selectedDirPath}
+								setSelectedDirPath={setSelectedDirPath}
+								forceSelectedPath={forceSelectedPath}
+								setForceSelectedPath={setForceSelectedPath}
+							/>
+						) : null}
+					</div>
+				</Panel>
+				<PanelResizeHandle className={styles.horizontalHandle} />
 				<Panel minSize={40}>
 					<div className={styles.editorPane}>
 						<Controls onHelpClick={() => setHelpOpen(true)} />

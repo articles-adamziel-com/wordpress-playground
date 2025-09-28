@@ -3,7 +3,9 @@
  *
  * * Files explorer
  *    * "Refresh" button to refresh the directory tree – OR auto-refresh every ~five seconds.
+ *    * Indicate the terminal and file explorer are loading
  *    * Download file / directory action
+ *    * Left/right arrows/delete don't work when renaming a file.
  *    * Bug – sometimes collapsing a directory = children are not visible after reopening.
  *      It an actual bug, not a faulty vite hot reloader!
  *    * ✅ Detect when a binary file is opened, show a special message "binary file. can't
@@ -53,6 +55,7 @@
  * * A way to run composer install by default (simply via Blueprints?)
  *   Communicate what it's doing by displaying the output in the terminal
  * * Tabs for opening multiple files
+ * * A way to save the workspace (Mount OPFS in Playground and sync it all there?)
  * * ✅ Find a way to put my workspace outside of WordPress and still serve it?
  *    * ✅ ln -s /workspace /wordpress/workspace?
  */

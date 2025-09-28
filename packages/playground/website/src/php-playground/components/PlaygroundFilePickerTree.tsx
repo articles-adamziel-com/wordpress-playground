@@ -140,7 +140,8 @@ const PlaygroundFilePickerTree = forwardRef<
 	const [localRenamingPath, setLocalRenamingPath] = useState<string | null>(
 		null
 	);
-	const [refreshToken, setRefreshToken] = useState(0);
+	const [invalidatePath, setInvalidatePath] = useState<string | null>(null);
+	const [invalidateKey, setInvalidateKey] = useState(0);
 	const pendingCreateRef = useRef<{
 		type: 'file' | 'folder';
 		tempPath: string;
@@ -360,7 +361,8 @@ const PlaygroundFilePickerTree = forwardRef<
 			pendingCreateRef.current = { type: 'file', tempPath };
 			setLocalRenamingPath(tempPath);
 			setLastSelectedPath(tempPath);
-			setRefreshToken((t) => t + 1);
+			setInvalidatePath(normalizedBase);
+			setInvalidateKey((k) => k + 1);
 		} catch (e) {
 			void e;
 		}
@@ -385,7 +387,8 @@ const PlaygroundFilePickerTree = forwardRef<
 			pendingCreateRef.current = { type: 'folder', tempPath };
 			setLocalRenamingPath(tempPath);
 			setLastSelectedPath(tempPath);
-			setRefreshToken((t) => t + 1);
+			setInvalidatePath(normalizedBase);
+			setInvalidateKey((k) => k + 1);
 		} catch (e) {
 			void e;
 		}
@@ -419,7 +422,8 @@ const PlaygroundFilePickerTree = forwardRef<
 				// Ignore failure
 			} finally {
 				setLocalRenamingPath(null);
-				setRefreshToken((t) => t + 1);
+				setInvalidatePath(getDirname(normalized));
+				setInvalidateKey((k) => k + 1);
 				// Clear editor if deleted current file or a parent directory
 				if (
 					currentPath &&
@@ -480,7 +484,6 @@ const PlaygroundFilePickerTree = forwardRef<
 	return (
 		<>
 			<CoreFilePickerTree
-				key={refreshToken}
 				files={files}
 				initialPath={coreInitialPath}
 				onSelect={handleSelect}
@@ -492,6 +495,12 @@ const PlaygroundFilePickerTree = forwardRef<
 						? toCorePath(effectiveRenamingPath, normalizedRoot)
 						: undefined
 				}
+				invalidatePath={
+					invalidatePath
+						? toCorePath(invalidatePath, normalizedRoot)
+						: undefined
+				}
+				invalidateKey={invalidateKey}
 				onRename={async (corePath, newName) => {
 					if (!playgroundClient) return;
 					const absPath = corePathToAbsolute(
@@ -572,21 +581,27 @@ const PlaygroundFilePickerTree = forwardRef<
 							candidateIsDir = isDir;
 						}
 						setLastSelectedPath(candidate);
-						// Update editor state if needed
+						// Update editor state
 						if (candidateIsDir) {
 							if (currentPath === absPath) {
 								dispatch(setCurrentPath(candidate));
 							}
 						} else {
-							try {
-								const newContent =
-									await playgroundClient.readFileAsText(
-										candidate
-									);
-								dispatch(setCode(newContent));
+							if (isPending) {
+								// Only open the file if we just created it
+								try {
+									const newContent =
+										await playgroundClient.readFileAsText(
+											candidate
+										);
+									dispatch(setCode(newContent));
+									dispatch(setCurrentPath(candidate));
+								} catch (e) {
+									void e;
+								}
+							} else if (currentPath === absPath) {
+								// If the renamed file was open, just update the path
 								dispatch(setCurrentPath(candidate));
-							} catch (e) {
-								void e;
 							}
 						}
 					} catch {
@@ -606,7 +621,8 @@ const PlaygroundFilePickerTree = forwardRef<
 					} finally {
 						pendingCreateRef.current = null;
 						setLocalRenamingPath(null);
-						setRefreshToken((t) => t + 1);
+						setInvalidatePath(parent);
+						setInvalidateKey((k) => k + 1);
 					}
 				}}
 				onRenameCancel={async (corePath) => {
@@ -635,7 +651,8 @@ const PlaygroundFilePickerTree = forwardRef<
 					}
 					pendingCreateRef.current = null;
 					setLocalRenamingPath(null);
-					setRefreshToken((t) => t + 1);
+					setInvalidatePath(getDirname(absPath));
+					setInvalidateKey((k) => k + 1);
 				}}
 				onContextMenu={handleInternalContextMenu}
 			/>
