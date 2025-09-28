@@ -142,21 +142,6 @@ export const Layout = () => {
 									})}
 									aria-label="Playground terminal"
 								>
-									<header className={styles.terminalHeader}>
-										<button
-											id="terminalToggle"
-											type="button"
-											className={styles.terminalToggle}
-											onClick={() =>
-												terminalPanelRef.current?.collapse()
-											}
-											aria-expanded={!isTerminalCollapsed}
-										>
-											{isTerminalCollapsed
-												? 'Show terminal'
-												: 'Hide terminal'}
-										</button>
-									</header>
 									<div className={styles.terminalPane}>
 										<Terminal
 											isCollapsed={isTerminalCollapsed}

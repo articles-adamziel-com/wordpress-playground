@@ -136,6 +136,7 @@ export const EditorHost = () => {
 		}
 		saveTimeoutRef.current = window.setTimeout(() => {
 			// Best-effort save; ignore errors (e.g., read-only files)
+			console.log('saving', currentPath, code);
 			client
 				.writeFile(currentPath, code)
 				.catch(() => {})

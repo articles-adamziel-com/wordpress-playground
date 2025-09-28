@@ -32,7 +32,7 @@
  *      anymore until you connect Github or so".
  * * Tool palette (file browser, environment setup form with wp+php versions, Blueprint editor)
  * * Terminal
- *    * Collapse/reveal UX bugs
+ *    * Disable terminal collapsing for now
  *    * Implement cwd, cd
  *    * Tab completion for paths
  *    * Implement basic `curl` and `curl -O` and `wget` to download remote files

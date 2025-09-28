@@ -189,6 +189,8 @@ export const PlaygroundManager = () => {
 		};
 	}, [dispatch, phpVersion, wpVersion, initialized]);
 
+	const currentPath = useAppSelector((state) => state.playground.currentPath);
+
 	useEffect(() => {
 		if (!initialized) {
 			return;
@@ -204,16 +206,18 @@ export const PlaygroundManager = () => {
 				return;
 			}
 			runCountRef.current += 1;
-			await currentClient.writeFile(
-				'/wordpress/code.php',
-				codeRef.current
-			);
-			const cacheBuster = `run=${runCountRef.current}-${Date.now()}`;
-			await currentClient.goTo(`/code.php?${cacheBuster}`);
+			// Saving is handled by the editor, but for the default code.php file, we also
+			// support manual save&run requests.
+			// TODO: Investigate it for race conditions. Can we ever collide with the editor autosave?
+			if (currentPath === '/wordpress/workspace/code.php') {
+				await currentClient.writeFile(currentPath, codeRef.current);
+				const cacheBuster = `run=${runCountRef.current}-${Date.now()}`;
+				await currentClient.goTo(`/workspace/code.php?${cacheBuster}`);
+			}
 		};
 
 		void executeRun();
-	}, [runRequestId, initialized]);
+	}, [runRequestId, initialized, currentPath]);
 
 	return null;
 };
