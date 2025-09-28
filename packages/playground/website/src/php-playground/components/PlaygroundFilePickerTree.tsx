@@ -385,6 +385,11 @@ const PlaygroundFilePickerTree = forwardRef<
 			setExpandRequestKey((k) => k + 1);
 			setFocusRequestPath(tempPath);
 			setFocusRequestKey((k) => k + 1);
+			// Clear requests after a short delay
+			setTimeout(() => {
+				setExpandRequestPath(null);
+				setFocusRequestPath(null);
+			}, 100);
 		} catch (e) {
 			void e;
 		}
@@ -416,6 +421,11 @@ const PlaygroundFilePickerTree = forwardRef<
 			setExpandRequestKey((k) => k + 1);
 			setFocusRequestPath(tempPath);
 			setFocusRequestKey((k) => k + 1);
+			// Clear requests after a short delay
+			setTimeout(() => {
+				setExpandRequestPath(null);
+				setFocusRequestPath(null);
+			}, 100);
 		} catch (e) {
 			void e;
 		}
@@ -460,6 +470,10 @@ const PlaygroundFilePickerTree = forwardRef<
 				// Focus on the parent directory after deletion
 				setFocusRequestPath(parentDir);
 				setFocusRequestKey((k) => k + 1);
+				// Clear focus request after a short delay
+				setTimeout(() => {
+					setFocusRequestPath(null);
+				}, 100);
 				// Clear editor if deleted current file or a parent directory
 				if (
 					currentPath &&
@@ -712,6 +726,10 @@ const PlaygroundFilePickerTree = forwardRef<
 						// focus the renamed entry
 						setFocusRequestPath(candidateNormalized);
 						setFocusRequestKey((k) => k + 1);
+						// Clear focus request after a short delay to prevent interference
+						setTimeout(() => {
+							setFocusRequestPath(null);
+						}, 100);
 					}
 				}}
 				onRenameCancel={async (corePath) => {
@@ -745,6 +763,10 @@ const PlaygroundFilePickerTree = forwardRef<
 					// refocus the original item (if exists) or its parent
 					setFocusRequestPath(getDirname(absPath));
 					setFocusRequestKey((k) => k + 1);
+					// Clear focus request after a short delay
+					setTimeout(() => {
+						setFocusRequestPath(null);
+					}, 100);
 				}}
 				onContextMenu={handleInternalContextMenu}
 			/>
