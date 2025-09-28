@@ -12,6 +12,8 @@ import type { FileNode } from '@wp-playground/components';
 import { FilePickerTree as CoreFilePickerTree } from '@wp-playground/components';
 import type { PlaygroundClient } from '@wp-playground/client';
 import styles from './layout.module.css';
+import { useAppDispatch, useAppSelector } from '../hooks';
+import { setCode, setCurrentPath } from '../store';
 
 function normalizePath(path: string) {
 	if (!path) return '/';
@@ -91,12 +93,6 @@ export type PlaygroundFilePickerTreeProps = {
 		node: FileNode,
 		path: string
 	) => void;
-	onAfterDelete?: (path: string, type: 'file' | 'folder') => void;
-	onAfterRename?: (
-		oldPath: string,
-		newPath: string,
-		type: 'file' | 'folder'
-	) => void;
 };
 
 const DEFAULT_WORKSPACE_DIR = '/wordpress/workspace';
@@ -122,11 +118,8 @@ const PlaygroundFilePickerTree = forwardRef<
 		onSelect,
 		playgroundClient,
 		renamingPath,
-		onRename,
 		onRenameCancel,
 		onContextMenu,
-		onAfterDelete,
-		onAfterRename,
 	},
 	ref
 ) {
@@ -155,6 +148,8 @@ const PlaygroundFilePickerTree = forwardRef<
 	const [lastSelectedPath, setLastSelectedPath] = useState<string | null>(
 		initialPath ?? DEFAULT_WORKSPACE_DIR
 	);
+	const dispatch = useAppDispatch();
+	const currentPath = useAppSelector((state) => state.playground.currentPath);
 
 	const getDirname = useCallback((path: string) => {
 		const p = normalizePath(path);
@@ -425,10 +420,18 @@ const PlaygroundFilePickerTree = forwardRef<
 			} finally {
 				setLocalRenamingPath(null);
 				setRefreshToken((t) => t + 1);
-				onAfterDelete?.(normalized, type);
+				// Clear editor if deleted current file or a parent directory
+				if (
+					currentPath &&
+					(currentPath === normalized ||
+						currentPath.startsWith(`${normalized}/`))
+				) {
+					dispatch(setCode(''));
+					dispatch(setCurrentPath(null));
+				}
 			}
 		},
-		[playgroundClient, onAfterDelete]
+		[playgroundClient, currentPath, dispatch]
 	);
 
 	const handleDownloadPath = useCallback(
@@ -569,11 +572,23 @@ const PlaygroundFilePickerTree = forwardRef<
 							candidateIsDir = isDir;
 						}
 						setLastSelectedPath(candidate);
-						onAfterRename?.(
-							absPath,
-							candidate,
-							candidateIsDir ? 'folder' : 'file'
-						);
+						// Update editor state if needed
+						if (candidateIsDir) {
+							if (currentPath === absPath) {
+								dispatch(setCurrentPath(candidate));
+							}
+						} else {
+							try {
+								const newContent =
+									await playgroundClient.readFileAsText(
+										candidate
+									);
+								dispatch(setCode(newContent));
+								dispatch(setCurrentPath(candidate));
+							} catch (e) {
+								void e;
+							}
+						}
 					} catch {
 						if (isPending) {
 							try {

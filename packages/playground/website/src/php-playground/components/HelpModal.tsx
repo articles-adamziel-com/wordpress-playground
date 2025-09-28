@@ -1,4 +1,4 @@
-import { MouseEvent, useEffect } from 'react';
+import { type MouseEvent, useEffect } from 'react';
 import clsx from 'clsx';
 
 import styles from './layout.module.css';
@@ -37,6 +37,17 @@ export const HelpModal = ({ isOpen, onRequestClose }: HelpModalProps) => {
 			document.removeEventListener('keydown', handleKeydown);
 		};
 	}, [isOpen, onRequestClose]);
+
+	useEffect(() => {
+		if (!isOpen) {
+			return;
+		}
+		const previousOverflow = document.body.style.overflow;
+		document.body.style.overflow = 'hidden';
+		return () => {
+			document.body.style.overflow = previousOverflow;
+		};
+	}, [isOpen]);
 
 	return (
 		<div
