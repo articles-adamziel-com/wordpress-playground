@@ -12,8 +12,7 @@ import { HelpModal } from './HelpModal';
 import FileExplorerSidebar from './file-explorer/FileExplorerSidebar';
 import FileExplorerPlaceholder from './file-explorer/FileExplorerPlaceholder';
 import { PlaygroundManager } from './PlaygroundManager';
-import { Terminal } from './terminal/Terminal';
-import TerminalPlaceholder from './terminal/TerminalPlaceholder';
+import { TerminalWrapper } from './terminal/Terminal';
 import { useAppSelector } from '../hooks';
 import AddressBar from '../../components/address-bar';
 import { DEFAULT_WORKSPACE_DIR } from '../constants';
@@ -23,7 +22,9 @@ export const Layout = () => {
 	const [isTerminalCollapsed, setTerminalCollapsed] = useState(false);
 	const [terminalResizeToken, setTerminalResizeToken] = useState(0);
 	const terminalPanelRef = useRef<ImperativePanelHandle | null>(null);
-	const playgroundClient = useAppSelector((state) => state.playground.client);
+	const playgroundClient = useAppSelector(
+		(state) => state.playground.client ?? undefined
+	);
 	const bootStatus = useAppSelector((state) => state.playground.bootStatus);
 	const currentPath = useAppSelector((state) => state.playground.currentPath);
 	const [previewUrl, setPreviewUrl] = useState('');
@@ -143,28 +144,15 @@ export const Layout = () => {
 									)}
 									aria-label="Playground terminal"
 								>
-									{bootStatus === 'ready' &&
-									playgroundClient ? (
-										<div
-											className={
-												terminalStyles.terminalPane
-											}
-										>
-											<Terminal
-												playgroundClient={
-													playgroundClient
-												}
-												isCollapsed={
-													isTerminalCollapsed
-												}
-												resizeToken={
-													terminalResizeToken
-												}
-											/>
-										</div>
-									) : (
-										<TerminalPlaceholder />
-									)}
+									<div
+										className={terminalStyles.terminalPane}
+									>
+										<TerminalWrapper
+											playgroundClient={playgroundClient}
+											isCollapsed={isTerminalCollapsed}
+											resizeToken={terminalResizeToken}
+										/>
+									</div>
 								</section>
 							</Panel>
 						</PanelGroup>

@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
 	basename,
 	joinPaths,
@@ -12,6 +12,7 @@ import 'xterm/css/xterm.css';
 import type { StreamedPHPResponse } from '@php-wasm/universal';
 import type { PlaygroundClient } from '@wp-playground/client';
 import { DEFAULT_WORKSPACE_DIR } from '../../constants';
+import TerminalPlaceholder from './TerminalPlaceholder';
 
 const PROGRESS_BAR_WIDTH = 28;
 const SPINNER_FRAMES = ['-', '\\', '|', '/'];
@@ -22,12 +23,6 @@ interface DownloadProgress {
 	receivedBytes: number;
 	spinnerIndex: number;
 	lastRenderedLength: number;
-}
-
-interface TerminalProps {
-	playgroundClient: PlaygroundClient;
-	isCollapsed: boolean;
-	resizeToken?: number;
 }
 
 const formatBytes = (bytes: number) => {
@@ -68,11 +63,50 @@ const drawProgress = (term: XTerm, progress: DownloadProgress) => {
 	progress.lastRenderedLength = padLength;
 };
 
-export const Terminal = ({
+interface TerminalWrapperProps {
+	playgroundClient?: PlaygroundClient;
+	isCollapsed: boolean;
+	resizeToken?: number;
+}
+export const TerminalWrapper = ({
 	playgroundClient,
 	isCollapsed,
 	resizeToken = 0,
-}: TerminalProps) => {
+}: TerminalWrapperProps) => {
+	const [cwd, setCwd] = useState<string | null>(null);
+
+	useEffect(() => {
+		if (playgroundClient) {
+			playgroundClient
+				.isReady()
+				.then(() => playgroundClient.cwd())
+				.then((cwd) => {
+					setCwd(cwd);
+				});
+		}
+	}, [playgroundClient]);
+
+	if (!playgroundClient || cwd === null) {
+		return <TerminalPlaceholder />;
+	}
+
+	return (
+		<TerminalComponent
+			playgroundClient={playgroundClient!}
+			isCollapsed={isCollapsed}
+			resizeToken={resizeToken}
+		/>
+	);
+};
+
+interface TerminalComponentProps extends TerminalWrapperProps {
+	playgroundClient: PlaygroundClient;
+}
+export const TerminalComponent = ({
+	playgroundClient,
+	isCollapsed,
+	resizeToken = 0,
+}: TerminalComponentProps) => {
 	const terminalContainerRef = useRef<HTMLDivElement | null>(null);
 	const fitAddonRef = useRef<FitAddon | null>(null);
 	const progressRef = useRef<DownloadProgress | null>(null);
