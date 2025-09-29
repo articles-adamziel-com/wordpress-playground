@@ -11,9 +11,6 @@ import { FilePickerTree as CoreFilePickerTree } from '@wp-playground/components'
 import styles from './FileExplorer.module.css';
 import saveAs from 'file-saver';
 import { zipDirectory } from '@wp-playground/common';
-import { useAppDispatch, useAppSelector } from '../../hooks';
-import { setCode, setCurrentPath } from '../../store';
-import { DEFAULT_WORKSPACE_DIR } from '../../constants';
 import { basename, dirname, joinPaths, normalizePath } from '@php-wasm/util';
 import { Popover, NavigableMenu, MenuItem } from '@wordpress/components';
 
@@ -32,8 +29,8 @@ async function listDir(filesystem: AsyncFilesystem, path: string) {
 }
 
 export interface PlaygroundFilePickerTreeRef {
-	createFile: () => void;
-	createFolder: () => void;
+	createFile: (absSelectedPath?: string) => void;
+	createFolder: (absSelectedPath?: string) => void;
 	refresh: () => Promise<void>;
 }
 
@@ -54,7 +51,7 @@ export type PlaygroundFilePickerTreeProps = {
 	root?: string;
 	initialPath?: string;
 	excludePaths?: string[];
-	onSelect?: (path: string) => void;
+	onSelect?: (path: string | null) => void;
 	filesystem: AsyncFilesystem;
 };
 
@@ -78,7 +75,7 @@ const PlaygroundFilePickerTree = forwardRef<
 	const normalizedRoot = useMemo(() => normalizePath(root), [root]);
 	const [files, setFiles] = useState<FileNode[]>([]);
 	const [contextMenu, setContextMenu] = useState<{
-		path: string;
+		absPath: string;
 		type: 'file' | 'folder';
 		x: number;
 		y: number;
@@ -92,11 +89,6 @@ const PlaygroundFilePickerTree = forwardRef<
 		tempPath: string;
 	} | null>(null);
 	const isMountedRef = useRef(true);
-	const [lastSelectedPath, setLastSelectedPath] = useState<string | null>(
-		initialPath ?? DEFAULT_WORKSPACE_DIR
-	);
-	const dispatch = useAppDispatch();
-	const currentPath = useAppSelector((state) => state.playground.currentPath);
 
 	useEffect(() => {
 		return () => {
@@ -178,8 +170,13 @@ const PlaygroundFilePickerTree = forwardRef<
 		return filtered;
 	};
 
+	const getAbsoluteSelectedPath = () => {
+		const relative = treeRef.current?.getSelectedPath() || null;
+		return relative ? pathToAbsolute(relative) : null;
+	};
 	const handleSelect = (path: string) => {
-		onSelect?.(pathToAbsolute(path));
+		const abs = pathToAbsolute(path);
+		onSelect?.(abs);
 	};
 
 	const handleInternalContextMenu = (
@@ -192,7 +189,7 @@ const PlaygroundFilePickerTree = forwardRef<
 		const absPath = pathToAbsolute(path);
 		setRenamingAbsolutePath(null);
 		setContextMenu({
-			path: absPath,
+			absPath: absPath,
 			type: node.type,
 			x: event.clientX,
 			y: event.clientY,
@@ -203,8 +200,6 @@ const PlaygroundFilePickerTree = forwardRef<
 		setContextMenu(null);
 		setRenamingAbsolutePath(targetPath);
 	};
-
-	// dirname helper not needed in this component
 
 	const findAvailableName = async (baseDir: string, baseName: string) => {
 		let name = baseName;
@@ -228,72 +223,54 @@ const PlaygroundFilePickerTree = forwardRef<
 		return name;
 	};
 
-	const resolveBaseDir = async (path?: string) => {
-		if (!path) {
-			path = lastSelectedPath || DEFAULT_WORKSPACE_DIR;
-		}
+	const handleCreateFile = async (absSelectedPath?: string) =>
+		await handleCreateNode(absSelectedPath, 'file', 'untitled.php');
+
+	const handleCreateDirectory = async (absSelectedPath?: string) =>
+		await handleCreateNode(absSelectedPath, 'folder', 'New Folder');
+
+	const handleCreateNode = async (
+		absSelectedPath: string | undefined,
+		type: 'file' | 'folder',
+		initialName: string
+	) => {
+		absSelectedPath = absSelectedPath || getAbsoluteSelectedPath() || root;
+
+		// Resolve the parent directory of the new node – either the
+		// currently selected directory or its first existing parent.
+		let nodeParent = absSelectedPath;
 		while (true) {
-			if (path === '/') {
+			if (nodeParent === '/') {
 				break;
 			}
-			if (await filesystem?.isDir(path)) {
+			if (await filesystem?.isDir(nodeParent)) {
 				break;
 			}
-			path = dirname(path);
+			nodeParent = dirname(nodeParent);
 		}
-		return path;
-	};
 
-	const handleCreateFile = async (targetDir?: string) => {
-		const baseDir = await resolveBaseDir(targetDir);
-		const normalizedBase = normalizePath(baseDir);
-		const name = await findAvailableName(normalizedBase, 'untitled.php');
+		const normalizedBase = normalizePath(nodeParent);
+		const name = await findAvailableName(normalizedBase, initialName);
 		const tempPath = joinPaths(normalizedBase, name);
-		await filesystem.writeFile(tempPath, '');
-		pendingCreateRef.current = { type: 'file', tempPath };
+		if (type === 'folder') {
+			await filesystem.mkdir(tempPath);
+		} else {
+			await filesystem.writeFile(tempPath, '');
+		}
+		pendingCreateRef.current = { type, tempPath };
 		setRenamingAbsolutePath(tempPath);
-		setLastSelectedPath(tempPath);
-		const relativeBasePath = pathToRelative(normalizedBase);
-		const relativeTempPath = pathToRelative(tempPath);
 		if (normalizedBase === normalizedRoot) {
 			await reloadTopLevel();
 		} else if (treeRef.current) {
-			await treeRef.current.expandToPath(relativeBasePath);
-			await treeRef.current.refresh(relativeBasePath);
+			await treeRef.current.expandToPath(pathToRelative(normalizedBase));
+			await treeRef.current.refresh(pathToRelative(normalizedBase));
 		}
-		if (treeRef.current && relativeTempPath) {
-			const focusLater = normalizedRoot === '/' && normalizedBase === '/';
-			const focusAction = () =>
-				treeRef.current?.focusPath(relativeTempPath, { notify: false });
-			if (focusLater) {
-				setTimeout(focusAction, 0);
-			} else {
-				focusAction();
-			}
-		}
-	};
-
-	const handleCreateDirectory = async (targetDir?: string) => {
-		const baseDir = await resolveBaseDir(targetDir);
-		const normalizedBase = normalizePath(baseDir);
-		const name = await findAvailableName(normalizedBase, 'New Folder');
-		const tempPath = joinPaths(normalizedBase, name);
-		await filesystem.mkdir(tempPath);
-		pendingCreateRef.current = { type: 'folder', tempPath };
-		setRenamingAbsolutePath(tempPath);
-		setLastSelectedPath(tempPath);
-		const relativeBasePath = pathToRelative(normalizedBase);
 		const relativeTempPath = pathToRelative(tempPath);
-		if (normalizedBase === normalizedRoot) {
-			await reloadTopLevel();
-		} else if (treeRef.current) {
-			await treeRef.current.expandToPath(relativeBasePath);
-			await treeRef.current.refresh(relativeBasePath);
-		}
 		if (treeRef.current && relativeTempPath) {
 			const focusLater = normalizedRoot === '/' && normalizedBase === '/';
-			const focusAction = () =>
+			const focusAction = () => {
 				treeRef.current?.focusPath(relativeTempPath, { notify: false });
+			};
 			if (focusLater) {
 				setTimeout(focusAction, 0);
 			} else {
@@ -313,10 +290,10 @@ const PlaygroundFilePickerTree = forwardRef<
 	);
 
 	const handleDeletePath = async (
-		targetPath: string,
+		absSelectedPath: string,
 		type: 'file' | 'folder'
 	) => {
-		const normalized = normalizePath(targetPath);
+		const normalized = normalizePath(absSelectedPath);
 		setContextMenu(null);
 		try {
 			if (type === 'folder') {
@@ -331,7 +308,6 @@ const PlaygroundFilePickerTree = forwardRef<
 		} finally {
 			setRenamingAbsolutePath(null);
 			const parentDir = dirname(normalized);
-			setLastSelectedPath(parentDir);
 			const relativeParentPath = pathToRelative(parentDir);
 			if (parentDir === normalizedRoot) {
 				await reloadTopLevel();
@@ -343,21 +319,21 @@ const PlaygroundFilePickerTree = forwardRef<
 					});
 				}
 			}
-			// Clear editor if deleted current file or a parent directory
+			// Notify parent if deleted current file or a parent directory
+			const currentAbs = getAbsoluteSelectedPath();
 			if (
-				currentPath &&
-				(currentPath === normalized ||
-					currentPath.startsWith(`${normalized}/`))
+				currentAbs &&
+				(currentAbs === normalized ||
+					currentAbs.startsWith(`${normalized}/`))
 			) {
-				dispatch(setCode(''));
-				dispatch(setCurrentPath(null));
+				onSelect?.(null);
 			}
 		}
 	};
 
-	const handleDownloadPath = async (targetPath: string) => {
+	const handleDownloadPath = async (absSelectedPath: string) => {
 		setContextMenu(null);
-		const normalized = normalizePath(targetPath);
+		const normalized = normalizePath(absSelectedPath);
 		const baseName = basename(normalized) || 'download';
 		const isDir = await filesystem.isDir(normalized);
 		if (isDir) {
@@ -419,27 +395,17 @@ const PlaygroundFilePickerTree = forwardRef<
 						if (isPending) {
 							pendingCreateRef.current = null;
 						}
-						setLastSelectedPath(candidateNormalized);
 						const relativeCandidateSamePath =
 							pathToRelative(candidateNormalized);
 						if (relativeCandidateSamePath) {
-							if (normalizedRoot === '/' && parent === '/') {
-								setTimeout(() => {
-									treeRef.current?.focusPath(
-										relativeCandidateSamePath,
-										{
-											notify: false,
-										}
-									);
-								}, 0);
-							} else {
+							setTimeout(() => {
 								treeRef.current?.focusPath(
 									relativeCandidateSamePath,
 									{
 										notify: false,
 									}
 								);
-							}
+							}, 0);
 						}
 						return;
 					}
@@ -482,7 +448,6 @@ const PlaygroundFilePickerTree = forwardRef<
 							);
 							candidateIsDir = isDir;
 						}
-						setLastSelectedPath(candidateNormalized);
 						if (
 							candidateIsDir &&
 							treeRef.current &&
@@ -494,25 +459,10 @@ const PlaygroundFilePickerTree = forwardRef<
 								relativeCandidatePath
 							);
 						}
-						if (candidateIsDir) {
-							if (currentPath === absPath) {
-								dispatch(setCurrentPath(candidate));
-							}
-						} else {
-							if (isPending) {
-								try {
-									const newContent =
-										await filesystem.readFileAsText(
-											candidate
-										);
-									dispatch(setCode(newContent));
-									dispatch(setCurrentPath(candidate));
-								} catch (e) {
-									void e;
-								}
-							} else if (currentPath === absPath) {
-								dispatch(setCurrentPath(candidate));
-							}
+						// If the currently selected path was renamed, notify parent with the new path
+						const currentAbs = getAbsoluteSelectedPath();
+						if (currentAbs === absPath) {
+							onSelect?.(normalizePath(candidate));
 						}
 
 						if (parent === normalizedRoot) {
@@ -567,7 +517,6 @@ const PlaygroundFilePickerTree = forwardRef<
 					pendingCreateRef.current = null;
 					setRenamingAbsolutePath(null);
 					const parentDir = dirname(absPath);
-					setLastSelectedPath(parentDir);
 					const relativeParentPath = pathToRelative(parentDir);
 					if (parentDir === normalizedRoot) {
 						await reloadTopLevel();
@@ -618,9 +567,8 @@ const PlaygroundFilePickerTree = forwardRef<
 								role="menuitem"
 								className={styles.contextMenuButton}
 								onClick={async () => {
-									const dir = contextMenu.path;
 									setContextMenu(null);
-									await handleCreateFile(dir);
+									await handleCreateFile(contextMenu.absPath);
 								}}
 							>
 								Create file
@@ -631,9 +579,10 @@ const PlaygroundFilePickerTree = forwardRef<
 								role="menuitem"
 								className={styles.contextMenuButton}
 								onClick={async () => {
-									const dir = contextMenu.path;
 									setContextMenu(null);
-									await handleCreateDirectory(dir);
+									await handleCreateDirectory(
+										contextMenu.absPath
+									);
 								}}
 							>
 								Create directory
@@ -643,7 +592,7 @@ const PlaygroundFilePickerTree = forwardRef<
 							role="menuitem"
 							className={styles.contextMenuButton}
 							onClick={() =>
-								handleContextMenuRename(contextMenu.path)
+								handleContextMenuRename(contextMenu.absPath)
 							}
 						>
 							Rename
@@ -653,7 +602,7 @@ const PlaygroundFilePickerTree = forwardRef<
 							className={`${styles.contextMenuButton} ${styles.contextMenuButtonDanger}`}
 							onClick={() =>
 								handleDeletePath(
-									contextMenu.path,
+									contextMenu.absPath,
 									contextMenu.type
 								)
 							}
@@ -663,7 +612,9 @@ const PlaygroundFilePickerTree = forwardRef<
 						<MenuItem
 							role="menuitem"
 							className={styles.contextMenuButton}
-							onClick={() => handleDownloadPath(contextMenu.path)}
+							onClick={() =>
+								handleDownloadPath(contextMenu.absPath)
+							}
 						>
 							Download
 						</MenuItem>

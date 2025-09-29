@@ -48,6 +48,7 @@ export type FilePickerTreeHandle = {
 		options?: { select?: boolean; domFocus?: boolean; notify?: boolean }
 	) => void;
 	selectPath: (path: string) => void;
+	getSelectedPath: () => string | null;
 	expandToPath: (path: string) => Promise<void>;
 	refresh: (path: string) => Promise<FileNode[] | undefined>;
 	remapPath: (from: string, to: string) => void;
@@ -355,6 +356,7 @@ export const FilePickerTree = forwardRef<
 				setFocusedPath(path);
 				focusDomNode(path);
 			},
+			getSelectedPath: () => selectedPath,
 			expandToPath: async (path: string) => await expandToPath(path),
 			refresh: async (path: string) => await refreshChildren(path),
 			remapPath: remapPathState,

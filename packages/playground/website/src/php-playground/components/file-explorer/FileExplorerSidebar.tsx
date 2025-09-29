@@ -85,6 +85,9 @@ export default function FileExplorerSidebar({
 		// Remove selectedDirPath from dependencies to prevent unwanted updates
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [forceSelectedPath, currentPath]);
+	const [lastSelectedPath, setLastSelectedPath] = useState<string | null>(
+		null
+	);
 
 	const [root, setRoot] = useState<string>(DEFAULT_WORKSPACE_DIR);
 
@@ -108,14 +111,22 @@ export default function FileExplorerSidebar({
 					</button>
 					<button
 						className={styles.fileExplorerButton}
-						onClick={() => treeRef.current?.createFile()}
+						onClick={() =>
+							treeRef.current?.createFile(
+								lastSelectedPath ?? undefined
+							)
+						}
 						title="Create new file"
 					>
 						New File
 					</button>
 					<button
 						className={styles.fileExplorerButton}
-						onClick={() => treeRef.current?.createFolder()}
+						onClick={() => {
+							treeRef.current?.createFolder(
+								lastSelectedPath ?? undefined
+							);
+						}}
 						title="Create new folder"
 					>
 						New Folder
@@ -131,6 +142,13 @@ export default function FileExplorerSidebar({
 					initialPath={treeInitialPath}
 					// excludePaths={['/dev', '/internal', '/proc', '/request']}
 					onSelect={async (path) => {
+						setLastSelectedPath(path);
+						if (!path) {
+							setForceSelectedPath(null);
+							dispatch(setCode(''));
+							dispatch(setCurrentPath(null));
+							return;
+						}
 						setForceSelectedPath(null);
 						if (filesystem && (await filesystem.isDir(path))) {
 							setSelectedDirPath(path);
@@ -173,9 +191,7 @@ export default function FileExplorerSidebar({
 							dispatch(setCode(text));
 							dispatch(setCurrentPath(path));
 							// Don't change selectedDirPath when clicking a file
-						} catch (e) {
-							console.error(e);
-							console.log({ path });
+						} catch {
 							dispatch(setCode('Could not open file'));
 							dispatch(setCurrentPath(null));
 							// Don't change selectedDirPath when clicking a file
