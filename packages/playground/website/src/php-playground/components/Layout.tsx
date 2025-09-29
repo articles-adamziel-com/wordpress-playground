@@ -7,7 +7,7 @@ import type { ImperativePanelHandle } from 'react-resizable-panels';
 import styles from './layout.module.css';
 import terminalStyles from './terminal/Terminal.module.css';
 import { Controls } from './Controls';
-import { EditorHost } from './EditorHost';
+import { EditorHost, EditorHostHandle } from './EditorHost';
 import { HelpModal } from './HelpModal';
 import FileExplorerSidebar from './file-explorer/FileExplorerSidebar';
 import FileExplorerPlaceholder from './file-explorer/FileExplorerPlaceholder';
@@ -34,6 +34,7 @@ export const Layout = () => {
 	const [forceSelectedPath, setForceSelectedPath] = useState<string | null>(
 		null
 	);
+	const editorHostRef = useRef<EditorHostHandle | null>(null);
 
 	useEffect(() => {
 		const previousTitle = document.title;
@@ -116,7 +117,7 @@ export const Layout = () => {
 											</span>
 										</div>
 									)}
-									<EditorHost />
+									<EditorHost ref={editorHostRef} />
 								</div>
 							</Panel>
 							<PanelResizeHandle

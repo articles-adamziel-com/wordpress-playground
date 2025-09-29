@@ -3,12 +3,13 @@
  *
  * * Files explorer
  *    * "Refresh" button to refresh the directory tree – OR auto-refresh every ~five seconds.
- *    * Bug – sometimes collapsing a directory = children are not visible after reopening.
- *      It an actual bug, not a faulty vite hot reloader!
  *    * Ability to create top-level directories
- *    * When I click "new file" and have a file selected, create a file in the parent
- *      directory
- *    * After creating and opening a file, focus the editor
+ *    * Single click a file -> open it
+ *    * Double click a file -> focus the code editor
+ *    * ✅ Bug – sometimes collapsing a directory = children are not visible after reopening.
+ *         It an actual bug, not a faulty vite hot reloader!
+ *    * ✅ When I click "new file" and have a file selected, create a file in the parent
+ *         directory
  *    * ✅ Download file / directory action
  *    * ✅ Left/right arrows/delete don't work when renaming a file.
  *    * ✅ Indicate the terminal and file explorer are loading
