@@ -247,47 +247,58 @@ const PlaygroundFilePickerTree = forwardRef<
 	const handleCreateFile = async (targetDir?: string) => {
 		const baseDir = await resolveBaseDir(targetDir);
 		const normalizedBase = normalizePath(baseDir);
-		try {
-			const name = await findAvailableName(
-				normalizedBase,
-				'untitled.php'
-			);
-			const tempPath = joinPaths(normalizedBase, name);
-			await filesystem.writeFile(tempPath, '');
-			pendingCreateRef.current = { type: 'file', tempPath };
-			setRenamingAbsolutePath(tempPath);
-			setLastSelectedPath(tempPath);
-			const absoluteBasePath = pathToAbsolute(normalizedBase);
-			const absoluteTempPath = pathToAbsolute(tempPath);
-			if (treeRef.current) {
-				await treeRef.current.expandToPath(absoluteBasePath);
-				await treeRef.current.refresh(absoluteBasePath);
-				treeRef.current.focusPath(absoluteTempPath, { notify: false });
+		const name = await findAvailableName(normalizedBase, 'untitled.php');
+		const tempPath = joinPaths(normalizedBase, name);
+		await filesystem.writeFile(tempPath, '');
+		pendingCreateRef.current = { type: 'file', tempPath };
+		setRenamingAbsolutePath(tempPath);
+		setLastSelectedPath(tempPath);
+		const relativeBasePath = pathToRelative(normalizedBase);
+		const relativeTempPath = pathToRelative(tempPath);
+		if (normalizedBase === normalizedRoot) {
+			await reloadTopLevel();
+		} else if (treeRef.current) {
+			await treeRef.current.expandToPath(relativeBasePath);
+			await treeRef.current.refresh(relativeBasePath);
+		}
+		if (treeRef.current && relativeTempPath) {
+			const focusLater = normalizedRoot === '/' && normalizedBase === '/';
+			const focusAction = () =>
+				treeRef.current?.focusPath(relativeTempPath, { notify: false });
+			if (focusLater) {
+				setTimeout(focusAction, 0);
+			} else {
+				focusAction();
 			}
-		} catch (e) {
-			void e;
 		}
 	};
 
 	const handleCreateDirectory = async (targetDir?: string) => {
 		const baseDir = await resolveBaseDir(targetDir);
 		const normalizedBase = normalizePath(baseDir);
-		try {
-			const name = await findAvailableName(normalizedBase, 'New Folder');
-			const tempPath = joinPaths(normalizedBase, name);
-			await filesystem.mkdir(tempPath);
-			pendingCreateRef.current = { type: 'folder', tempPath };
-			setRenamingAbsolutePath(tempPath);
-			setLastSelectedPath(tempPath);
-			const absoluteBasePath = pathToAbsolute(normalizedBase);
-			const absoluteTempPath = pathToAbsolute(tempPath);
-			if (treeRef.current) {
-				await treeRef.current.expandToPath(absoluteBasePath);
-				await treeRef.current.refresh(absoluteBasePath);
-				treeRef.current.focusPath(absoluteTempPath, { notify: false });
+		const name = await findAvailableName(normalizedBase, 'New Folder');
+		const tempPath = joinPaths(normalizedBase, name);
+		await filesystem.mkdir(tempPath);
+		pendingCreateRef.current = { type: 'folder', tempPath };
+		setRenamingAbsolutePath(tempPath);
+		setLastSelectedPath(tempPath);
+		const relativeBasePath = pathToRelative(normalizedBase);
+		const relativeTempPath = pathToRelative(tempPath);
+		if (normalizedBase === normalizedRoot) {
+			await reloadTopLevel();
+		} else if (treeRef.current) {
+			await treeRef.current.expandToPath(relativeBasePath);
+			await treeRef.current.refresh(relativeBasePath);
+		}
+		if (treeRef.current && relativeTempPath) {
+			const focusLater = normalizedRoot === '/' && normalizedBase === '/';
+			const focusAction = () =>
+				treeRef.current?.focusPath(relativeTempPath, { notify: false });
+			if (focusLater) {
+				setTimeout(focusAction, 0);
+			} else {
+				focusAction();
 			}
-		} catch (e) {
-			void e;
 		}
 	};
 
@@ -346,20 +357,16 @@ const PlaygroundFilePickerTree = forwardRef<
 
 	const handleDownloadPath = async (targetPath: string) => {
 		setContextMenu(null);
-		try {
-			const normalized = normalizePath(targetPath);
-			const baseName = basename(normalized) || 'download';
-			const isDir = await filesystem.isDir(normalized);
-			if (isDir) {
-				const bytes = await zipDirectory(filesystem as any, normalized);
-				saveAs(new File([bytes], `${baseName}.zip`));
-				return;
-			}
-			const data = await filesystem.readFileAsBuffer(normalized);
-			saveAs(new File([data], baseName));
-		} catch {
-			// Ignore failure
+		const normalized = normalizePath(targetPath);
+		const baseName = basename(normalized) || 'download';
+		const isDir = await filesystem.isDir(normalized);
+		if (isDir) {
+			const bytes = await zipDirectory(filesystem as any, normalized);
+			saveAs(new File([bytes], `${baseName}.zip`));
+			return;
 		}
+		const data = await filesystem.readFileAsBuffer(normalized);
+		saveAs(new File([data], baseName));
 	};
 
 	return (

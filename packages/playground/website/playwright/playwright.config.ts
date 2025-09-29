@@ -1,12 +1,16 @@
-import type { PlaywrightTestConfig } from '@playwright/test';
-import { defineConfig, devices } from '@playwright/test';
+import {
+	defineConfig,
+	devices,
+	type PlaywrightTestConfig,
+} from '@playwright/test';
 
 const baseURL =
 	process.env.PLAYWRIGHT_TEST_BASE_URL ||
 	'http://127.0.0.1:5400/website-server/';
 
 export const playwrightConfig: PlaywrightTestConfig = {
-	testDir: './e2e',
+	testDir: './ct',
+	// testDir: './e2e',
 	/* Run tests in files in parallel */
 	fullyParallel: false,
 	/* Fail the build on CI if you accidentally left test.only in the source code. */
