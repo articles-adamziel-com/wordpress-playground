@@ -71,6 +71,17 @@
 	padding: 4px 0;
 }
 
+.contextMenuTrigger {
+	position: fixed;
+	width: 1px;
+	height: 1px;
+	padding: 0;
+	border: none;
+	background: transparent;
+	pointer-events: none;
+	opacity: 0;
+}
+
 .contextMenuButton {
 	display: block;
 	width: 100%;

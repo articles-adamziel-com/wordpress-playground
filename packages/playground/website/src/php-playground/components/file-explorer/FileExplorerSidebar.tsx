@@ -1,9 +1,9 @@
 import React, { useMemo, useRef } from 'react';
 import styles from './FileExplorer.module.css';
 import PlaygroundFilePickerTree, {
+	type AsyncFilesystem,
 	type PlaygroundFilePickerTreeRef,
-} from '../PlaygroundFilePickerTree';
-import type { PlaygroundClient } from '@wp-playground/client';
+} from './PlaygroundFilePickerTree';
 import { useAppDispatch } from '../../hooks';
 import { setCode, setCurrentPath } from '../../store';
 import { DEFAULT_WORKSPACE_DIR } from '../../constants';
@@ -57,14 +57,14 @@ const createDownloadUrl = (data: Uint8Array, filename: string) => {
 };
 
 export default function FileExplorerSidebar({
-	playgroundClient,
+	filesystem,
 	currentPath,
 	selectedDirPath,
 	setSelectedDirPath,
 	forceSelectedPath,
 	setForceSelectedPath,
 }: {
-	playgroundClient: PlaygroundClient | null;
+	filesystem: AsyncFilesystem | null;
 	currentPath: string | null;
 	selectedDirPath: string | null;
 	setSelectedDirPath: React.Dispatch<React.SetStateAction<string | null>>;
@@ -95,7 +95,7 @@ export default function FileExplorerSidebar({
 						className={styles.fileExplorerButton}
 						onClick={() => treeRef.current?.createFile()}
 						title="Create new file"
-						disabled={!playgroundClient}
+						disabled={!filesystem}
 					>
 						New File
 					</button>
@@ -103,7 +103,7 @@ export default function FileExplorerSidebar({
 						className={styles.fileExplorerButton}
 						onClick={() => treeRef.current?.createFolder()}
 						title="Create new folder"
-						disabled={!playgroundClient}
+						disabled={!filesystem}
 					>
 						New Folder
 					</button>
@@ -112,23 +112,21 @@ export default function FileExplorerSidebar({
 			<div className={styles.fileExplorerTree}>
 				<PlaygroundFilePickerTree
 					ref={treeRef}
-					filesystem={playgroundClient ?? undefined}
+					filesystem={filesystem ?? undefined}
 					root="/"
 					initialPath={treeInitialPath}
 					excludePaths={['/dev', '/internal', '/proc', '/request']}
 					onSelect={async (path) => {
 						setForceSelectedPath(null);
-						if (
-							playgroundClient &&
-							(await playgroundClient.isDir(path))
-						) {
+						if (filesystem && (await filesystem.isDir(path))) {
 							setSelectedDirPath(path);
 							return;
 						}
-						if (!playgroundClient) return;
+						if (!filesystem) return;
 						try {
-							const data =
-								await playgroundClient.readFileAsBuffer(path);
+							const data = await filesystem.readFileAsBuffer(
+								path
+							);
 							const size = data.byteLength;
 							if (size > MAX_INLINE_BYTES) {
 								const { url, filename } = createDownloadUrl(
