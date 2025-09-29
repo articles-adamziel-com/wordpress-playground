@@ -6,6 +6,7 @@ import PlaygroundFilePickerTree, {
 import type { PlaygroundClient } from '@wp-playground/client';
 import { useAppDispatch } from '../hooks';
 import { setCode, setCurrentPath } from '../store';
+import { DEFAULT_WORKSPACE_DIR } from '../constants';
 
 const MAX_INLINE_BYTES = 1024 * 1024; // 1MB
 
@@ -79,7 +80,7 @@ export default function FileExplorerSidebar({
 			forceSelectedPath ??
 				(currentPath
 					? dirnameSafe(currentPath)
-					: selectedDirPath ?? '/wordpress/workspace')
+					: selectedDirPath ?? DEFAULT_WORKSPACE_DIR)
 		);
 		// Remove selectedDirPath from dependencies to prevent unwanted updates
 		// eslint-disable-next-line react-hooks/exhaustive-deps

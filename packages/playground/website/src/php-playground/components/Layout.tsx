@@ -14,8 +14,7 @@ import { Terminal } from './Terminal';
 import { useAppSelector } from '../hooks';
 import AddressBar from '../../components/address-bar';
 import { Spinner } from '../../components/spinner';
-
-const DEFAULT_WORKSPACE_DIR = '/wordpress/workspace';
+import { DEFAULT_WORKSPACE_DIR } from '../constants';
 
 export const Layout = () => {
 	const [isHelpOpen, setHelpOpen] = useState(false);
@@ -214,6 +213,7 @@ export const Layout = () => {
 								>
 									<div className={styles.terminalPane}>
 										<Terminal
+											playgroundClient={playgroundClient}
 											isCollapsed={isTerminalCollapsed}
 											resizeToken={terminalResizeToken}
 										/>

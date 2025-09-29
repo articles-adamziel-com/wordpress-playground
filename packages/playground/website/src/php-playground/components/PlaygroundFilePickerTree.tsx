@@ -15,6 +15,7 @@ import saveAs from 'file-saver';
 import { zipDirectory } from '@wp-playground/common';
 import { useAppDispatch, useAppSelector } from '../hooks';
 import { setCode, setCurrentPath } from '../store';
+import { DEFAULT_WORKSPACE_DIR } from '../constants';
 
 function normalizePath(path: string) {
 	if (!path) return '/';
@@ -95,8 +96,6 @@ export type PlaygroundFilePickerTreeProps = {
 		path: string
 	) => void;
 };
-
-const DEFAULT_WORKSPACE_DIR = '/wordpress/workspace';
 
 const isValidNameSegment = (name: string) => {
 	if (!name) {

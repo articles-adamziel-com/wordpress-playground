@@ -82,7 +82,7 @@ export function sandboxedSpawnHandlerFactory(
 						// @see https://github.com/wp-cli/wp-cli/issues/1102
 						SHELL_PIPE: '0',
 					},
-					cwd: options.cwd,
+					cwd,
 				});
 
 				result.stdout.pipeTo(

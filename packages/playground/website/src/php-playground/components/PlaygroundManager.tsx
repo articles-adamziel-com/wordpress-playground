@@ -1,6 +1,10 @@
 import { useEffect, useRef } from 'react';
 import { startPlaygroundWeb } from '@wp-playground/client';
-import { DEFAULT_WP_REMOTE } from '../constants';
+import {
+	DEFAULT_URL_PREFIX,
+	DEFAULT_WORKSPACE_DIR,
+	DEFAULT_WP_REMOTE,
+} from '../constants';
 import { useAppDispatch, useAppSelector } from '../hooks';
 import {
 	applyUrlState,
@@ -161,18 +165,19 @@ export const PlaygroundManager = () => {
 					return;
 				}
 
-				await clientInstance.mkdir('/wordpress/workspace');
-				const initialPath = '/wordpress/workspace/code.php';
+				await clientInstance.mkdir(DEFAULT_WORKSPACE_DIR);
+				await clientInstance.chdir(DEFAULT_WORKSPACE_DIR);
+				const initialPath = `${DEFAULT_WORKSPACE_DIR}/code.php`;
 				await clientInstance.writeFile(initialPath, codeRef.current);
 				dispatch(setCurrentPath(initialPath));
-				await clientInstance.goTo('/workspace/code.php');
+
+				await clientInstance.goTo(`${DEFAULT_URL_PREFIX}/code.php`);
 
 				clientRef.current = clientInstance;
 				dispatch(setClient(clientInstance));
 				playgroundRuntime.setClient(clientInstance);
 				dispatch(setBootStatus('ready'));
 			} catch (error: any) {
-				console.log({ error });
 				const message = error?.message ?? String(error);
 				dispatch(setBootStatus('error'));
 				dispatch(setBootError(message));
@@ -209,10 +214,12 @@ export const PlaygroundManager = () => {
 			// Saving is handled by the editor, but for the default code.php file, we also
 			// support manual save&run requests.
 			// TODO: Investigate it for race conditions. Can we ever collide with the editor autosave?
-			if (currentPath === '/wordpress/workspace/code.php') {
+			if (currentPath === `${DEFAULT_WORKSPACE_DIR}/code.php`) {
 				await currentClient.writeFile(currentPath, codeRef.current);
 				const cacheBuster = `run=${runCountRef.current}-${Date.now()}`;
-				await currentClient.goTo(`/workspace/code.php?${cacheBuster}`);
+				await currentClient.goTo(
+					`${DEFAULT_URL_PREFIX}/code.php?${cacheBuster}`
+				);
 			}
 		};
 

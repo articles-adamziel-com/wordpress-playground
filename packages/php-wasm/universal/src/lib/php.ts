@@ -84,7 +84,6 @@ export class PHP implements Disposable {
 		needsRotating: boolean;
 		maxRequests: number;
 		requestsMade: number;
-		cwd?: string;
 	} = {
 		enabled: false,
 		recreateRuntime: () => 0,
@@ -1312,7 +1311,6 @@ export class PHP implements Disposable {
 			enabled: true,
 			recreateRuntime: options.recreateRuntime,
 			maxRequests: options.maxRequests ?? 400,
-			cwd: options.cwd,
 		};
 	}
 
@@ -1499,11 +1497,7 @@ export class PHP implements Disposable {
 			argv.slice(1),
 			{
 				env: options.env,
-				cwd:
-					options.cwd ??
-					this.#rotationOptions?.cwd ??
-					this.documentRoot ??
-					'/',
+				cwd: this.cwd(),
 			}
 		) as ChildProcess;
 

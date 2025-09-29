@@ -12,6 +12,8 @@ import { playgroundRuntime } from '../runtime';
 import styles from './layout.module.css';
 import 'xterm/css/xterm.css';
 import type { StreamedPHPResponse } from '@php-wasm/universal';
+import type { PlaygroundClient } from '@wp-playground/client';
+import { DEFAULT_WORKSPACE_DIR } from '../constants';
 
 const PROGRESS_BAR_WIDTH = 28;
 const SPINNER_FRAMES = ['-', '\\', '|', '/'];
@@ -25,6 +27,7 @@ interface DownloadProgress {
 }
 
 interface TerminalProps {
+	playgroundClient: PlaygroundClient;
 	isCollapsed: boolean;
 	resizeToken?: number;
 }
@@ -67,12 +70,29 @@ const drawProgress = (term: XTerm, progress: DownloadProgress) => {
 	progress.lastRenderedLength = padLength;
 };
 
-export const Terminal = ({ isCollapsed, resizeToken = 0 }: TerminalProps) => {
+export const Terminal = ({
+	playgroundClient,
+	isCollapsed,
+	resizeToken = 0,
+}: TerminalProps) => {
 	const terminalContainerRef = useRef<HTMLDivElement | null>(null);
 	const fitAddonRef = useRef<FitAddon | null>(null);
 	const progressRef = useRef<DownloadProgress | null>(null);
-	// @TODO: Initialize this from the client, not with a hardcoded default.
-	const cwdRef = useRef<string>('/wordpress/workspace');
+	const clientRef = useRef<PlaygroundClient | null>(null);
+
+	const cwdRef = useRef<string>(DEFAULT_WORKSPACE_DIR);
+
+	useEffect(() => {
+		clientRef.current = playgroundClient;
+		if (clientRef.current) {
+			clientRef.current
+				.isReady()
+				.then(() => clientRef.current!.cwd())
+				.then((cwd) => {
+					cwdRef.current = cwd;
+				});
+		}
+	}, [playgroundClient]);
 
 	useEffect(() => {
 		const container = terminalContainerRef.current;
@@ -286,12 +306,11 @@ export const Terminal = ({ isCollapsed, resizeToken = 0 }: TerminalProps) => {
 		};
 
 		const ensureBootReady = async () => {
-			await playgroundRuntime.getBootPromise();
-			const client = playgroundRuntime.getClient();
-			if (!client) {
+			if (!clientRef.current) {
 				throw new Error('Playground client is not ready yet.');
 			}
-			return client as any;
+			await clientRef.current.isReady();
+			return clientRef.current;
 		};
 
 		const ensureWpCliBinary = async () => {
@@ -347,10 +366,10 @@ if(!function_exists('grapheme_substr')) {
 			options: { env?: Record<string, string> } = {}
 		) => {
 			const client = await ensureBootReady();
-			const response = (await client.cli(argv, {
-				...options,
-				cwd: cwdRef.current,
-			})) as StreamedPHPResponse & {
+			const response = (await client.cli(
+				argv,
+				options
+			)) as StreamedPHPResponse & {
 				terminate?: () => Promise<void> | void;
 			};
 			const stdoutReader = response.stdout.getReader();
@@ -492,7 +511,7 @@ if(!function_exists('grapheme_substr')) {
 					const resolvedPath = resolvePath(target);
 					let isDirectory = false;
 					try {
-						isDirectory = client.isDir(resolvedPath);
+						isDirectory = await client.isDir(resolvedPath);
 					} catch {
 						isDirectory = false;
 					}
@@ -502,9 +521,10 @@ if(!function_exists('grapheme_substr')) {
 							`\r\ncd: no such file or directory: ${message}`
 						);
 						autoScroll();
-					} else {
-						cwdRef.current = resolvedPath;
+						return;
 					}
+					await client.chdir(resolvedPath);
+					cwdRef.current = resolvedPath;
 					prompt();
 					commandPrompted = true;
 				} else if (command === 'wp') {
