@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { forwardRef, useEffect, useImperativeHandle, useRef } from 'react';
 import { Compartment, EditorState } from '@codemirror/state';
 import {
 	EditorView,
@@ -75,7 +75,11 @@ const getLanguageExtension = (filePath: string | null) => {
 	}
 };
 
-export const EditorHost = () => {
+export type EditorHostHandle = {
+	focus: () => void;
+};
+
+export const EditorHost = forwardRef<EditorHostHandle>((_, ref) => {
 	const dispatch = useAppDispatch();
 	const code = useAppSelector((state) => state.playground.code);
 	// @TODO: tricky – the parent may be renamed, moved, etc. Make
@@ -87,6 +91,12 @@ export const EditorHost = () => {
 	const viewRef = useRef<EditorView | null>(null);
 	const languageCompartmentRef = useRef(new Compartment());
 	const saveTimeoutRef = useRef<number | null>(null);
+
+	useImperativeHandle(ref, () => ({
+		focus: () => {
+			viewRef.current?.focus();
+		},
+	}));
 
 	useEffect(() => {
 		if (viewRef.current) {
@@ -211,4 +221,6 @@ export const EditorHost = () => {
 	}, [client, currentPath, code]);
 
 	return <div id="editor" ref={editorRef} className={styles.editor} />;
-};
+});
+
+EditorHost.displayName = 'EditorHost';

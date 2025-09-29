@@ -1,12 +1,12 @@
 import React, { useMemo, useRef } from 'react';
-import styles from './layout.module.css';
+import styles from './FileExplorer.module.css';
 import PlaygroundFilePickerTree, {
 	type PlaygroundFilePickerTreeRef,
-} from './PlaygroundFilePickerTree';
+} from '../PlaygroundFilePickerTree';
 import type { PlaygroundClient } from '@wp-playground/client';
-import { useAppDispatch } from '../hooks';
-import { setCode, setCurrentPath } from '../store';
-import { DEFAULT_WORKSPACE_DIR } from '../constants';
+import { useAppDispatch } from '../../hooks';
+import { setCode, setCurrentPath } from '../../store';
+import { DEFAULT_WORKSPACE_DIR } from '../../constants';
 
 const MAX_INLINE_BYTES = 1024 * 1024; // 1MB
 
@@ -112,7 +112,7 @@ export default function FileExplorerSidebar({
 			<div className={styles.fileExplorerTree}>
 				<PlaygroundFilePickerTree
 					ref={treeRef}
-					playgroundClient={playgroundClient ?? undefined}
+					filesystem={playgroundClient ?? undefined}
 					root="/"
 					initialPath={treeInitialPath}
 					excludePaths={['/dev', '/internal', '/proc', '/request']}

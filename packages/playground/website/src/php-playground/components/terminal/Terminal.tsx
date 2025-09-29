@@ -7,13 +7,11 @@ import {
 } from '@php-wasm/util';
 import { Terminal as XTerm } from 'xterm';
 import { FitAddon } from 'xterm-addon-fit';
-
-import { playgroundRuntime } from '../runtime';
-import styles from './layout.module.css';
+import styles from './Terminal.module.css';
 import 'xterm/css/xterm.css';
 import type { StreamedPHPResponse } from '@php-wasm/universal';
 import type { PlaygroundClient } from '@wp-playground/client';
-import { DEFAULT_WORKSPACE_DIR } from '../constants';
+import { DEFAULT_WORKSPACE_DIR } from '../../constants';
 
 const PROGRESS_BAR_WIDTH = 28;
 const SPINNER_FRAMES = ['-', '\\', '|', '/'];

@@ -9,7 +9,6 @@ import React, {
 } from 'react';
 import type { FileNode, FilePickerTreeHandle } from '@wp-playground/components';
 import { FilePickerTree as CoreFilePickerTree } from '@wp-playground/components';
-import type { PlaygroundClient } from '@wp-playground/client';
 import styles from './layout.module.css';
 import saveAs from 'file-saver';
 import { zipDirectory } from '@wp-playground/common';
@@ -18,12 +17,12 @@ import { setCode, setCurrentPath } from '../store';
 import { DEFAULT_WORKSPACE_DIR } from '../constants';
 import { basename, dirname, joinPaths, normalizePath } from '@php-wasm/util';
 
-async function listDir(client: PlaygroundClient, path: string) {
-	const names = await client.listFiles(path);
+async function listDir(filesystem: AsyncFilesystem, path: string) {
+	const names = await filesystem.listFiles(path);
 	const results: { name: string; type: 'file' | 'folder' }[] = [];
 	for (const name of names) {
 		const childPath = path === '/' ? `/${name}` : `${path}/${name}`;
-		const isDirectory = await client.isDir(childPath);
+		const isDirectory = await filesystem.isDir(childPath);
 		results.push({ name, type: isDirectory ? 'folder' : 'file' });
 	}
 	return results.sort((a, b) => {
@@ -75,12 +74,26 @@ export interface PlaygroundFilePickerTreeRef {
 	createFolder: () => void;
 }
 
+export interface AsyncFilesystem {
+	isDir: (path: string) => Promise<boolean>;
+	fileExists: (path: string) => Promise<boolean>;
+	readFileAsBuffer: (path: string) => Promise<Uint8Array>;
+	readFileAsText: (path: string) => Promise<string>;
+	listFiles: (path: string) => Promise<string[]>;
+	writeFile: (path: string, data: Uint8Array | string) => Promise<void>;
+	mkdir: (path: string) => Promise<void>;
+	rmdir: (path: string, options?: { recursive?: boolean }) => Promise<void>;
+	mv: (source: string, destination: string) => Promise<void>;
+	unlink: (path: string) => Promise<void>;
+}
+
 export type PlaygroundFilePickerTreeProps = {
 	root?: string;
 	initialPath?: string;
 	excludePaths?: string[];
 	onSelect?: (path: string) => void;
-	playgroundClient?: PlaygroundClient;
+	filesystem?: AsyncFilesystem;
+
 	renamingPath?: string | null;
 	onRename?: (path: string, newName: string) => void;
 	onRenameCancel?: (path: string) => void;
@@ -110,7 +123,7 @@ const PlaygroundFilePickerTree = forwardRef<
 		initialPath,
 		excludePaths,
 		onSelect,
-		playgroundClient,
+		filesystem,
 		renamingPath,
 		onRenameCancel,
 		onContextMenu,
@@ -155,13 +168,13 @@ const PlaygroundFilePickerTree = forwardRef<
 			setFiles([{ name: rootName, type: 'folder' } as FileNode]);
 			return;
 		}
-		if (!playgroundClient) {
+		if (!filesystem) {
 			if (!isMountedRef.current) return;
 			setFiles([]);
 			return;
 		}
 		try {
-			const entries = await listDir(playgroundClient, '/');
+			const entries = await listDir(filesystem, '/');
 			const excludeSet = new Set(excludePaths ?? []);
 			const filtered = entries.filter((item) => {
 				const childAbs = `/${item.name}`;
@@ -176,7 +189,7 @@ const PlaygroundFilePickerTree = forwardRef<
 				setFiles([]);
 			}
 		}
-	}, [excludePathsKey, normalizedRoot, playgroundClient, rootName]);
+	}, [excludePathsKey, normalizedRoot, filesystem, rootName]);
 
 	useEffect(() => {
 		return () => {
@@ -258,9 +271,9 @@ const PlaygroundFilePickerTree = forwardRef<
 
 	const handleLoadChildren = useCallback(
 		async (corePath: string) => {
-			if (!playgroundClient) return [] as FileNode[];
+			if (!filesystem) return [] as FileNode[];
 			const absDirPath = corePathToAbsolute(corePath, normalizedRoot);
-			const items = await listDir(playgroundClient, absDirPath);
+			const items = await listDir(filesystem, absDirPath);
 			const filtered = items.filter((item) => {
 				const childAbs =
 					absDirPath === '/'
@@ -270,7 +283,7 @@ const PlaygroundFilePickerTree = forwardRef<
 			});
 			return prioritizeRenaming(filtered, absDirPath) as FileNode[];
 		},
-		[playgroundClient, normalizedRoot, excludePaths, prioritizeRenaming]
+		[filesystem, normalizedRoot, excludePaths, prioritizeRenaming]
 	);
 
 	const handleSelect = (path: string) => {
@@ -322,8 +335,8 @@ const PlaygroundFilePickerTree = forwardRef<
 		};
 		const prefix = baseDir === '/' ? '' : baseDir;
 		while (
-			(await playgroundClient?.fileExists(`${prefix}/${name}`)) ||
-			(await playgroundClient?.isDir(`${prefix}/${name}`))
+			(await filesystem?.fileExists(`${prefix}/${name}`)) ||
+			(await filesystem?.isDir(`${prefix}/${name}`))
 		) {
 			counter += 1;
 			const { stem, ext } = splitExt(baseName);
@@ -340,7 +353,7 @@ const PlaygroundFilePickerTree = forwardRef<
 			if (path === '/') {
 				break;
 			}
-			if (await playgroundClient?.isDir(path)) {
+			if (await filesystem?.isDir(path)) {
 				break;
 			}
 			path = dirname(path);
@@ -349,7 +362,7 @@ const PlaygroundFilePickerTree = forwardRef<
 	};
 
 	const handleCreateFile = async (targetDir?: string) => {
-		if (!playgroundClient) {
+		if (!filesystem) {
 			return;
 		}
 		const baseDir = await resolveBaseDir(targetDir);
@@ -360,7 +373,7 @@ const PlaygroundFilePickerTree = forwardRef<
 				'untitled.php'
 			);
 			const tempPath = joinPaths(normalizedBase, name);
-			await playgroundClient.writeFile(tempPath, '');
+			await filesystem.writeFile(tempPath, '');
 			pendingCreateRef.current = { type: 'file', tempPath };
 			setLocalRenamingPath(tempPath);
 			setLastSelectedPath(tempPath);
@@ -382,7 +395,7 @@ const PlaygroundFilePickerTree = forwardRef<
 	};
 
 	const handleCreateDirectory = async (targetDir?: string) => {
-		if (!playgroundClient) {
+		if (!filesystem) {
 			return;
 		}
 		const baseDir = await resolveBaseDir(targetDir);
@@ -390,7 +403,7 @@ const PlaygroundFilePickerTree = forwardRef<
 		try {
 			const name = await findAvailableName(normalizedBase, 'New Folder');
 			const tempPath = joinPaths(normalizedBase, name);
-			await playgroundClient.mkdir(tempPath);
+			await filesystem.mkdir(tempPath);
 			pendingCreateRef.current = { type: 'folder', tempPath };
 			setLocalRenamingPath(tempPath);
 			setLastSelectedPath(tempPath);
@@ -422,18 +435,18 @@ const PlaygroundFilePickerTree = forwardRef<
 
 	const handleDeletePath = useCallback(
 		async (targetPath: string, type: 'file' | 'folder') => {
-			if (!playgroundClient) {
+			if (!filesystem) {
 				return;
 			}
 			const normalized = normalizePath(targetPath);
 			setContextMenu(null);
 			try {
 				if (type === 'folder') {
-					await playgroundClient.rmdir(normalized, {
+					await filesystem.rmdir(normalized, {
 						recursive: true,
 					} as any);
 				} else {
-					await playgroundClient.unlink(normalized);
+					await filesystem.unlink(normalized);
 				}
 			} catch {
 				// Ignore failure
@@ -471,7 +484,7 @@ const PlaygroundFilePickerTree = forwardRef<
 			dispatch,
 			getDirname,
 			normalizedRoot,
-			playgroundClient,
+			filesystem,
 			reloadRoot,
 			toCore,
 		]
@@ -479,31 +492,29 @@ const PlaygroundFilePickerTree = forwardRef<
 
 	const handleDownloadPath = useCallback(
 		async (targetPath: string) => {
-			if (!playgroundClient) {
+			if (!filesystem) {
 				return;
 			}
 			setContextMenu(null);
 			try {
 				const normalized = normalizePath(targetPath);
 				const baseName = basename(normalized) || 'download';
-				const isDir = await playgroundClient.isDir(normalized);
+				const isDir = await filesystem.isDir(normalized);
 				if (isDir) {
 					const bytes = await zipDirectory(
-						playgroundClient as any,
+						filesystem as any,
 						normalized
 					);
 					saveAs(new File([bytes], `${baseName}.zip`));
 					return;
 				}
-				const data = await playgroundClient.readFileAsBuffer(
-					normalized
-				);
+				const data = await filesystem.readFileAsBuffer(normalized);
 				saveAs(new File([data], baseName));
 			} catch {
 				// Ignore failure
 			}
 		},
-		[playgroundClient]
+		[filesystem]
 	);
 
 	const contextMenuStyle = useMemo(() => {
@@ -535,7 +546,7 @@ const PlaygroundFilePickerTree = forwardRef<
 						: undefined
 				}
 				onRename={async (corePath, newName) => {
-					if (!playgroundClient) return;
+					if (!filesystem) return;
 					const absPath = corePathToAbsolute(
 						corePath,
 						normalizedRoot
@@ -550,11 +561,11 @@ const PlaygroundFilePickerTree = forwardRef<
 						if (isPending) {
 							try {
 								if (pending.type === 'folder') {
-									await playgroundClient.rmdir(absPath, {
+									await filesystem.rmdir(absPath, {
 										recursive: true,
 									} as any);
 								} else {
-									await playgroundClient.unlink(absPath);
+									await filesystem.unlink(absPath);
 								}
 							} catch (e) {
 								void e;
@@ -595,10 +606,10 @@ const PlaygroundFilePickerTree = forwardRef<
 						return;
 					}
 
-					const exists = await playgroundClient.fileExists(
+					const exists = await filesystem.fileExists(
 						candidateNormalized
 					);
-					const existsDir = await playgroundClient.isDir(
+					const existsDir = await filesystem.isDir(
 						candidateNormalized
 					);
 					if (
@@ -625,9 +636,9 @@ const PlaygroundFilePickerTree = forwardRef<
 					const coreCandidate = toCore(candidateNormalized);
 					let candidateIsDir = pending?.type === 'folder';
 					try {
-						await playgroundClient.mv(absPath, candidate as any);
+						await filesystem.mv(absPath, candidate as any);
 						if (!pending) {
-							const isDir = await playgroundClient.isDir(
+							const isDir = await filesystem.isDir(
 								candidate as any
 							);
 							candidateIsDir = isDir;
@@ -652,7 +663,7 @@ const PlaygroundFilePickerTree = forwardRef<
 							if (isPending) {
 								try {
 									const newContent =
-										await playgroundClient.readFileAsText(
+										await filesystem.readFileAsText(
 											candidate
 										);
 									dispatch(setCode(newContent));
@@ -686,11 +697,11 @@ const PlaygroundFilePickerTree = forwardRef<
 						if (isPending) {
 							try {
 								if (pending?.type === 'folder') {
-									await playgroundClient.rmdir(absPath, {
+									await filesystem.rmdir(absPath, {
 										recursive: true,
 									} as any);
 								} else {
-									await playgroundClient.unlink(absPath);
+									await filesystem.unlink(absPath);
 								}
 							} catch {
 								// Ignore failure
@@ -707,7 +718,7 @@ const PlaygroundFilePickerTree = forwardRef<
 						normalizedRoot
 					);
 					const pending = pendingCreateRef.current;
-					if (!playgroundClient || pending?.tempPath !== absPath) {
+					if (!filesystem || pending?.tempPath !== absPath) {
 						onRenameCancel?.(absPath);
 						setLocalRenamingPath((prev) =>
 							prev === absPath ? null : prev
@@ -716,11 +727,11 @@ const PlaygroundFilePickerTree = forwardRef<
 					}
 					try {
 						if (pending.type === 'folder') {
-							await playgroundClient.rmdir(absPath, {
+							await filesystem.rmdir(absPath, {
 								recursive: true,
 							} as any);
 						} else {
-							await playgroundClient.unlink(absPath);
+							await filesystem.unlink(absPath);
 						}
 					} catch (e) {
 						void e;
