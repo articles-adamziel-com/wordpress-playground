@@ -1,6 +1,5 @@
 import React, {
 	forwardRef,
-	useCallback,
 	useEffect,
 	useImperativeHandle,
 	useRef,
@@ -131,146 +130,141 @@ export const FilePickerTree = forwardRef<
 		lazyChildrenRef.current = lazyChildren;
 	}, [lazyChildren]);
 
-	const focusDomNode = useCallback((path: string) => {
+	const focusDomNode = (path: string) => {
 		const focusTarget = containerRef.current?.querySelector(
 			`[data-path="${path}"]`
 		) as HTMLElement | null;
 		if (focusTarget && typeof focusTarget.focus === 'function') {
 			focusTarget.focus();
 		}
-	}, []);
+	};
 
-	const generatePath = useCallback(
-		(node: FileNode, parentPath = ''): string => {
-			const raw = parentPath ? `${parentPath}/${node.name}` : node.name;
-			return raw.replaceAll(/\\+/g, '/').replace(/\/{2,}/g, '/');
-		},
-		[]
-	);
+	const generatePath = (node: FileNode, parentPath = ''): string => {
+		const raw = parentPath ? `${parentPath}/${node.name}` : node.name;
+		return raw.replaceAll(/\\+/g, '/').replace(/\/{2,}/g, '/');
+	};
 
-	const getResolvedChildren = useCallback(
-		(node: FileNode, path: string): FileNode[] | undefined => {
-			if (node.children) {
-				return node.children;
-			}
-			return lazyChildren[path];
-		},
-		[lazyChildren]
-	);
+	const getResolvedChildren = (
+		node: FileNode,
+		path: string
+	): FileNode[] | undefined => {
+		if (node.children) {
+			return node.children;
+		}
+		return lazyChildren[path];
+	};
 
-	const loadChildrenForPath = useCallback(
-		async (path: string, node: FileNode) => {
-			if (!onLoadChildren || node.type !== 'folder') {
-				return node.children;
-			}
-			const existingChildren =
-				node.children ?? lazyChildrenRef.current[path];
-			if (existingChildren || loadingPathsRef.current[path]) {
-				return existingChildren;
-			}
-			setLoadingPaths((prev) => ({ ...prev, [path]: true }));
-			try {
-				const children = await onLoadChildren(path);
-				setLazyChildren((prev) => ({
-					...prev,
-					[path]: children ?? [],
-				}));
-				return children;
-			} finally {
-				setLoadingPaths((prev) => {
-					const next = { ...prev };
-					delete next[path];
-					return next;
+	const loadChildrenForPath = (path: string, node: FileNode) => {
+		if (!onLoadChildren || node.type !== 'folder') {
+			return node.children;
+		}
+		const existingChildren = node.children ?? lazyChildrenRef.current[path];
+		if (existingChildren || loadingPathsRef.current[path]) {
+			return existingChildren;
+		}
+		setLoadingPaths((prev) => ({ ...prev, [path]: true }));
+		return new Promise<FileNode[]>((resolve) => {
+			onLoadChildren(path)
+				.then((children) => {
+					setLazyChildren((prev) => ({
+						...prev,
+						[path]: children ?? [],
+					}));
+					resolve(children ?? []);
+				})
+				.catch(() => {
+					resolve([]);
+				})
+				.finally(() => {
+					setLoadingPaths((prev) => {
+						const next = { ...prev };
+						delete next[path];
+						return next;
+					});
 				});
-			}
-		},
-		[onLoadChildren]
-	);
+		});
+	};
 
-	const refreshChildren = useCallback(
-		async (path: string) => {
-			if (!onLoadChildren) {
-				return undefined;
-			}
-			setLoadingPaths((prev) => ({ ...prev, [path]: true }));
-			try {
-				const children = await onLoadChildren(path);
-				setLazyChildren((prev) => ({
-					...prev,
-					[path]: children ?? [],
-				}));
-				return children;
-			} finally {
-				setLoadingPaths((prev) => {
-					const next = { ...prev };
-					delete next[path];
-					return next;
+	const refreshChildren = (path: string) => {
+		if (!onLoadChildren) {
+			return Promise.resolve(undefined);
+		}
+		setLoadingPaths((prev) => ({ ...prev, [path]: true }));
+		return new Promise<FileNode[]>((resolve) => {
+			onLoadChildren(path)
+				.then((children) => {
+					setLazyChildren((prev) => ({
+						...prev,
+						[path]: children ?? [],
+					}));
+					resolve(children ?? []);
+				})
+				.catch(() => {
+					resolve([]);
+				})
+				.finally(() => {
+					setLoadingPaths((prev) => {
+						const next = { ...prev };
+						delete next[path];
+						return next;
+					});
 				});
-			}
-		},
-		[onLoadChildren]
-	);
+		});
+	};
 
-	const toggleNode = useCallback(
-		async (path: string, node: FileNode, isOpen: boolean) => {
-			setExpanded((prev) => ({
-				...prev,
-				[path]: isOpen,
-			}));
-			if (isOpen) {
-				await loadChildrenForPath(path, node);
-			} else {
-				setLazyChildren((prev) => {
-					if (prev[path] === undefined) {
-						return prev;
-					}
-					const next = { ...prev } as Record<string, FileNode[]>;
-					delete next[path];
-					return next;
-				});
-			}
-		},
-		[loadChildrenForPath]
-	);
-
-	const expandToPath = useCallback(
-		async (targetPath: string) => {
-			if (!targetPath) return;
-			const chain = buildPathChain(targetPath);
-			if (chain.length === 0) return;
-			setExpanded((prev) => {
-				const next = { ...prev } as ExpandedNodePaths;
-				for (const segment of chain) {
-					next[segment] = true;
+	const toggleNode = (path: string, node: FileNode, isOpen: boolean) => {
+		setExpanded((prev) => ({
+			...prev,
+			[path]: isOpen,
+		}));
+		if (isOpen) {
+			void loadChildrenForPath(path, node);
+		} else {
+			setLazyChildren((prev) => {
+				if (prev[path] === undefined) {
+					return prev;
 				}
+				const next = { ...prev } as Record<string, FileNode[]>;
+				delete next[path];
 				return next;
 			});
-			if (!onLoadChildren) {
-				return;
-			}
+		}
+	};
 
-			let currentChildren: FileNode[] | undefined = files;
-			let parentPath = '';
-			for (const segmentPath of chain) {
-				const nextNode = currentChildren?.find((child) => {
-					const childPath = generatePath(child, parentPath);
-					return childPath === segmentPath;
-				});
-				if (!nextNode || nextNode.type !== 'folder') {
-					parentPath = segmentPath;
-					currentChildren = [];
-					continue;
-				}
-				const loaded = await loadChildrenForPath(segmentPath, nextNode);
-				currentChildren =
-					loaded ?? lazyChildrenRef.current[segmentPath];
+	const expandToPath = async (targetPath: string) => {
+		if (!targetPath) return;
+		const chain = buildPathChain(targetPath);
+		if (chain.length === 0) return;
+		setExpanded((prev) => {
+			const next = { ...prev } as ExpandedNodePaths;
+			for (const segment of chain) {
+				next[segment] = true;
+			}
+			return next;
+		});
+		if (!onLoadChildren) {
+			return;
+		}
+
+		let currentChildren: FileNode[] | undefined = files;
+		let parentPath = '';
+		for (const segmentPath of chain) {
+			const nextNode = currentChildren?.find((child) => {
+				const childPath = generatePath(child, parentPath);
+				return childPath === segmentPath;
+			});
+			if (!nextNode || nextNode.type !== 'folder') {
 				parentPath = segmentPath;
+				currentChildren = [];
+				continue;
 			}
-		},
-		[files, generatePath, loadChildrenForPath, onLoadChildren]
-	);
+			const loaded = await loadChildrenForPath(segmentPath, nextNode);
+			currentChildren = loaded ?? lazyChildrenRef.current[segmentPath];
+			parentPath = segmentPath;
+		}
+	};
 
-	const remapPathState = useCallback((from: string, to: string) => {
+	const remapPathState = (from: string, to: string) => {
 		if (!from || !to || from === to) {
 			return;
 		}
@@ -321,17 +315,14 @@ export const FilePickerTree = forwardRef<
 			const mapped = remapKey(prev);
 			return mapped ?? prev;
 		});
-	}, []);
+	};
 
-	const selectPath = useCallback(
-		(path: string, notify = true) => {
-			setSelectedPath(path);
-			if (notify) {
-				onSelect(path);
-			}
-		},
-		[onSelect]
-	);
+	const selectPath = (path: string, notify = true) => {
+		setSelectedPath(path);
+		if (notify) {
+			onSelect(path);
+		}
+	};
 
 	useImperativeHandle(
 		ref,
@@ -364,17 +355,11 @@ export const FilePickerTree = forwardRef<
 				setFocusedPath(path);
 				focusDomNode(path);
 			},
-			expandToPath,
-			refresh: refreshChildren,
+			expandToPath: async (path: string) => await expandToPath(path),
+			refresh: async (path: string) => await refreshChildren(path),
 			remapPath: remapPathState,
 		}),
-		[
-			expandToPath,
-			focusDomNode,
-			refreshChildren,
-			remapPathState,
-			selectPath,
-		]
+		[]
 	);
 
 	const hasInitializedRef = useRef(false);

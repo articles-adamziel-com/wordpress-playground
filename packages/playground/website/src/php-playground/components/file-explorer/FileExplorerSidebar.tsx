@@ -1,4 +1,4 @@
-import React, { useMemo, useRef } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
 import styles from './FileExplorer.module.css';
 import PlaygroundFilePickerTree, {
 	type AsyncFilesystem,
@@ -64,7 +64,7 @@ export default function FileExplorerSidebar({
 	forceSelectedPath,
 	setForceSelectedPath,
 }: {
-	filesystem: AsyncFilesystem | null;
+	filesystem: AsyncFilesystem;
 	currentPath: string | null;
 	selectedDirPath: string | null;
 	setSelectedDirPath: React.Dispatch<React.SetStateAction<string | null>>;
@@ -86,6 +86,8 @@ export default function FileExplorerSidebar({
 		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, [forceSelectedPath, currentPath]);
 
+	const [root, setRoot] = useState<string>(DEFAULT_WORKSPACE_DIR);
+
 	return (
 		<div className={styles.fileExplorerContainer}>
 			<div className={styles.fileExplorerHeader}>
@@ -93,9 +95,21 @@ export default function FileExplorerSidebar({
 				<div className={styles.fileExplorerActions}>
 					<button
 						className={styles.fileExplorerButton}
+						onClick={() => {
+							if (root === DEFAULT_WORKSPACE_DIR) {
+								setRoot('/wordpress');
+							} else {
+								setRoot(DEFAULT_WORKSPACE_DIR);
+							}
+						}}
+						title="Toggle WP"
+					>
+						Toggle WP
+					</button>
+					<button
+						className={styles.fileExplorerButton}
 						onClick={() => treeRef.current?.createFile()}
 						title="Create new file"
-						disabled={!filesystem}
 					>
 						New File
 					</button>
@@ -103,7 +117,6 @@ export default function FileExplorerSidebar({
 						className={styles.fileExplorerButton}
 						onClick={() => treeRef.current?.createFolder()}
 						title="Create new folder"
-						disabled={!filesystem}
 					>
 						New Folder
 					</button>
@@ -113,16 +126,16 @@ export default function FileExplorerSidebar({
 				<PlaygroundFilePickerTree
 					ref={treeRef}
 					filesystem={filesystem ?? undefined}
-					root="/"
+					root={root}
+					key={root}
 					initialPath={treeInitialPath}
-					excludePaths={['/dev', '/internal', '/proc', '/request']}
+					// excludePaths={['/dev', '/internal', '/proc', '/request']}
 					onSelect={async (path) => {
 						setForceSelectedPath(null);
 						if (filesystem && (await filesystem.isDir(path))) {
 							setSelectedDirPath(path);
 							return;
 						}
-						if (!filesystem) return;
 						try {
 							const data = await filesystem.readFileAsBuffer(
 								path
@@ -160,7 +173,9 @@ export default function FileExplorerSidebar({
 							dispatch(setCode(text));
 							dispatch(setCurrentPath(path));
 							// Don't change selectedDirPath when clicking a file
-						} catch {
+						} catch (e) {
+							console.error(e);
+							console.log({ path });
 							dispatch(setCode('Could not open file'));
 							dispatch(setCurrentPath(null));
 							// Don't change selectedDirPath when clicking a file

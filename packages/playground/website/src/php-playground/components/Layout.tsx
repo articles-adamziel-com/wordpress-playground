@@ -69,8 +69,6 @@ export const Layout = () => {
 		};
 	}, [playgroundClient]);
 
-	// treeInitialPath is computed within FileExplorer
-
 	return (
 		<div id="php-playground-react-root" className={styles.root}>
 			<PlaygroundManager />
