@@ -34,6 +34,7 @@ async function listDir(filesystem: AsyncFilesystem, path: string) {
 export interface PlaygroundFilePickerTreeRef {
 	createFile: () => void;
 	createFolder: () => void;
+	refresh: () => Promise<void>;
 }
 
 export interface AsyncFilesystem {
@@ -103,26 +104,27 @@ const PlaygroundFilePickerTree = forwardRef<
 		};
 	}, []);
 
-	useEffect(() => {
-		async function loadFiles() {
-			try {
-				const entries = await listDir(filesystem, normalizedRoot);
-				const excludeSet = new Set(excludePaths ?? []);
-				const filtered = entries.filter((item) => {
-					const childAbs = `/${item.name}`;
-					return !excludeSet.has(childAbs);
-				});
-				const ordered = filtered;
-				if (isMountedRef.current) {
-					setFiles(ordered as FileNode[]);
-				}
-			} catch {
-				if (isMountedRef.current) {
-					setFiles([]);
-				}
+	const reloadTopLevel = async () => {
+		try {
+			const entries = await listDir(filesystem, normalizedRoot);
+			const excludeSet = new Set(excludePaths ?? []);
+			const filtered = entries.filter((item) => {
+				const childAbs = `/${item.name}`;
+				return !excludeSet.has(childAbs);
+			});
+			if (isMountedRef.current) {
+				setFiles(filtered as FileNode[]);
+			}
+		} catch {
+			if (isMountedRef.current) {
+				setFiles([]);
 			}
 		}
-		loadFiles();
+	};
+
+	useEffect(() => {
+		void reloadTopLevel();
+		// eslint-disable-next-line react-hooks/exhaustive-deps
 	}, []);
 
 	const pathToRelative = (path: string) => {
@@ -294,6 +296,7 @@ const PlaygroundFilePickerTree = forwardRef<
 		() => ({
 			createFile: handleCreateFile,
 			createFolder: handleCreateDirectory,
+			refresh: reloadTopLevel,
 		}),
 		[]
 	);
@@ -318,12 +321,16 @@ const PlaygroundFilePickerTree = forwardRef<
 			setRenamingAbsolutePath(null);
 			const parentDir = dirname(normalized);
 			setLastSelectedPath(parentDir);
-			const absoluteParentPath = pathToAbsolute(parentDir);
-			if (treeRef.current) {
-				await treeRef.current.refresh(absoluteParentPath);
-				treeRef.current.focusPath(absoluteParentPath, {
-					notify: false,
-				});
+			const relativeParentPath = pathToRelative(parentDir);
+			if (parentDir === normalizedRoot) {
+				await reloadTopLevel();
+			} else if (treeRef.current) {
+				await treeRef.current.refresh(relativeParentPath);
+				if (relativeParentPath) {
+					treeRef.current.focusPath(relativeParentPath, {
+						notify: false,
+					});
+				}
 			}
 			// Clear editor if deleted current file or a parent directory
 			if (
@@ -374,8 +381,8 @@ const PlaygroundFilePickerTree = forwardRef<
 					const pending = pendingCreateRef.current;
 					const isPending = pending?.tempPath === absPath;
 					const parent = dirname(absPath);
-					const absoluteParentPath = pathToAbsolute(parent);
-					const absoluteOriginalPath = pathToAbsolute(absPath);
+					const relativeParentPath = pathToRelative(parent);
+					const relativeOriginalPath = pathToRelative(absPath);
 					const sanitized = (newName || '').trim();
 					if (!isValidNameSegment(sanitized)) {
 						if (isPending) {
@@ -406,13 +413,13 @@ const PlaygroundFilePickerTree = forwardRef<
 							pendingCreateRef.current = null;
 						}
 						setLastSelectedPath(candidateNormalized);
-						const absoluteCandidateSamePath =
-							pathToAbsolute(candidateNormalized);
-						if (absoluteCandidateSamePath) {
+						const relativeCandidateSamePath =
+							pathToRelative(candidateNormalized);
+						if (relativeCandidateSamePath) {
 							if (normalizedRoot === '/' && parent === '/') {
 								setTimeout(() => {
 									treeRef.current?.focusPath(
-										absoluteCandidateSamePath,
+										relativeCandidateSamePath,
 										{
 											notify: false,
 										}
@@ -420,7 +427,7 @@ const PlaygroundFilePickerTree = forwardRef<
 								}, 0);
 							} else {
 								treeRef.current?.focusPath(
-									absoluteCandidateSamePath,
+									relativeCandidateSamePath,
 									{
 										notify: false,
 									}
@@ -457,8 +464,8 @@ const PlaygroundFilePickerTree = forwardRef<
 						}
 					}
 
-					const absoluteCandidatePath =
-						pathToAbsolute(candidateNormalized);
+					const relativeCandidatePath =
+						pathToRelative(candidateNormalized);
 					let candidateIsDir = pending?.type === 'folder';
 					try {
 						await filesystem.mv(absPath, candidate as any);
@@ -472,12 +479,12 @@ const PlaygroundFilePickerTree = forwardRef<
 						if (
 							candidateIsDir &&
 							treeRef.current &&
-							absoluteOriginalPath &&
-							absoluteCandidatePath
+							relativeOriginalPath &&
+							relativeCandidatePath
 						) {
 							treeRef.current.remapPath(
-								absoluteOriginalPath,
-								absoluteCandidatePath
+								relativeOriginalPath,
+								relativeCandidatePath
 							);
 						}
 						if (candidateIsDir) {
@@ -501,16 +508,15 @@ const PlaygroundFilePickerTree = forwardRef<
 							}
 						}
 
-						if (treeRef.current) {
-							await treeRef.current.refresh(absoluteParentPath);
-							if (absoluteCandidatePath) {
-								treeRef.current.focusPath(
-									absoluteCandidatePath,
-									{
-										notify: false,
-									}
-								);
-							}
+						if (parent === normalizedRoot) {
+							await reloadTopLevel();
+						} else if (treeRef.current) {
+							await treeRef.current.refresh(relativeParentPath);
+						}
+						if (relativeCandidatePath) {
+							treeRef.current?.focusPath(relativeCandidatePath, {
+								notify: false,
+							});
 						}
 					} catch {
 						if (isPending) {
@@ -555,15 +561,17 @@ const PlaygroundFilePickerTree = forwardRef<
 					setRenamingAbsolutePath(null);
 					const parentDir = dirname(absPath);
 					setLastSelectedPath(parentDir);
-					const absoluteParentPath = pathToAbsolute(parentDir);
-					if (treeRef.current) {
-						await treeRef.current.refresh(absoluteParentPath);
+					const relativeParentPath = pathToRelative(parentDir);
+					if (parentDir === normalizedRoot) {
+						await reloadTopLevel();
+					} else if (treeRef.current) {
+						await treeRef.current.refresh(relativeParentPath);
 					}
-					if (absoluteParentPath) {
+					if (relativeParentPath) {
 						const focusLater =
 							normalizedRoot === '/' && parentDir === '/';
 						const focusAction = () =>
-							treeRef.current?.focusPath(absoluteParentPath, {
+							treeRef.current?.focusPath(relativeParentPath, {
 								notify: false,
 							});
 						if (focusLater) {
