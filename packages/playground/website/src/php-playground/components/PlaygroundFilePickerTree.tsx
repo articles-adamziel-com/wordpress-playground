@@ -16,20 +16,14 @@ import { zipDirectory } from '@wp-playground/common';
 import { useAppDispatch, useAppSelector } from '../hooks';
 import { setCode, setCurrentPath } from '../store';
 import { DEFAULT_WORKSPACE_DIR } from '../constants';
-
-function normalizePath(path: string) {
-	if (!path) return '/';
-	const normalized =
-		('/' + path).replace(/\/+/, '/').replace(/\/+$/, '') || '/';
-	return normalized;
-}
+import { basename, dirname, joinPaths, normalizePath } from '@php-wasm/util';
 
 async function listDir(client: PlaygroundClient, path: string) {
 	const names = await client.listFiles(path);
 	const results: { name: string; type: 'file' | 'folder' }[] = [];
 	for (const name of names) {
 		const childPath = path === '/' ? `/${name}` : `${path}/${name}`;
-		const isDirectory = await client.isDir(childPath).catch(() => false);
+		const isDirectory = await client.isDir(childPath);
 		results.push({ name, type: isDirectory ? 'folder' : 'file' });
 	}
 	return results.sort((a, b) => {
@@ -280,7 +274,7 @@ const PlaygroundFilePickerTree = forwardRef<
 	);
 
 	const handleSelect = (path: string) => {
-		const normalized = normalizePath(path);
+		const normalized = normalizePath('/' + path);
 		setLastSelectedPath(normalized);
 		if (onSelect) onSelect(normalized);
 	};
@@ -316,11 +310,7 @@ const PlaygroundFilePickerTree = forwardRef<
 
 	// dirname helper not needed in this component
 
-	const findAvailableName = async (
-		client: PlaygroundClient,
-		baseDir: string,
-		baseName: string
-	) => {
+	const findAvailableName = async (baseDir: string, baseName: string) => {
 		let name = baseName;
 		let counter = 0;
 		const splitExt = (n: string) => {
@@ -332,8 +322,8 @@ const PlaygroundFilePickerTree = forwardRef<
 		};
 		const prefix = baseDir === '/' ? '' : baseDir;
 		while (
-			(await client.fileExists(`${prefix}/${name}`).catch(() => false)) ||
-			(await client.isDir(`${prefix}/${name}`).catch(() => false))
+			(await playgroundClient?.fileExists(`${prefix}/${name}`)) ||
+			(await playgroundClient?.isDir(`${prefix}/${name}`))
 		) {
 			counter += 1;
 			const { stem, ext } = splitExt(baseName);
@@ -342,28 +332,34 @@ const PlaygroundFilePickerTree = forwardRef<
 		return name;
 	};
 
-	const resolveBaseDir = (overridePath?: string) => {
-		const basePath = overridePath || lastSelectedPath;
-		if (!basePath) return DEFAULT_WORKSPACE_DIR;
-		// If selection is a folder, use it; otherwise use its dirname
-		return basePath;
+	const resolveBaseDir = async (path?: string) => {
+		if (!path) {
+			path = lastSelectedPath || DEFAULT_WORKSPACE_DIR;
+		}
+		while (true) {
+			if (path === '/') {
+				break;
+			}
+			if (await playgroundClient?.isDir(path)) {
+				break;
+			}
+			path = dirname(path);
+		}
+		return path;
 	};
 
 	const handleCreateFile = async (targetDir?: string) => {
 		if (!playgroundClient) {
 			return;
 		}
-		const baseDir = resolveBaseDir(targetDir) || DEFAULT_WORKSPACE_DIR;
+		const baseDir = await resolveBaseDir(targetDir);
 		const normalizedBase = normalizePath(baseDir);
 		try {
 			const name = await findAvailableName(
-				playgroundClient,
 				normalizedBase,
 				'untitled.php'
 			);
-			const tempPath = `${
-				normalizedBase === '/' ? '' : normalizedBase
-			}/${name}`;
+			const tempPath = joinPaths(normalizedBase, name);
 			await playgroundClient.writeFile(tempPath, '');
 			pendingCreateRef.current = { type: 'file', tempPath };
 			setLocalRenamingPath(tempPath);
@@ -385,51 +381,35 @@ const PlaygroundFilePickerTree = forwardRef<
 		}
 	};
 
-	const handleCreateDirectory = useCallback(
-		async (targetDir?: string) => {
-			if (!playgroundClient) {
-				return;
+	const handleCreateDirectory = async (targetDir?: string) => {
+		if (!playgroundClient) {
+			return;
+		}
+		const baseDir = await resolveBaseDir(targetDir);
+		const normalizedBase = normalizePath(baseDir);
+		try {
+			const name = await findAvailableName(normalizedBase, 'New Folder');
+			const tempPath = joinPaths(normalizedBase, name);
+			await playgroundClient.mkdir(tempPath);
+			pendingCreateRef.current = { type: 'folder', tempPath };
+			setLocalRenamingPath(tempPath);
+			setLastSelectedPath(tempPath);
+			const coreBase = toCore(normalizedBase);
+			const coreTemp = toCore(tempPath);
+			if (normalizedRoot === '/' && normalizedBase === '/') {
+				await reloadRoot();
+				setTimeout(() => {
+					treeRef.current?.focusPath(coreTemp, { notify: false });
+				}, 0);
+			} else if (treeRef.current) {
+				await treeRef.current.expandToPath(coreBase);
+				await treeRef.current.refresh(coreBase);
+				treeRef.current.focusPath(coreTemp, { notify: false });
 			}
-			const baseDir = resolveBaseDir(targetDir) || DEFAULT_WORKSPACE_DIR;
-			const normalizedBase = normalizePath(baseDir);
-			try {
-				const name = await findAvailableName(
-					playgroundClient,
-					normalizedBase,
-					'New Folder'
-				);
-				const tempPath = `${
-					normalizedBase === '/' ? '' : normalizedBase
-				}/${name}`;
-				await playgroundClient.mkdir(tempPath);
-				pendingCreateRef.current = { type: 'folder', tempPath };
-				setLocalRenamingPath(tempPath);
-				setLastSelectedPath(tempPath);
-				const coreBase = toCore(normalizedBase);
-				const coreTemp = toCore(tempPath);
-				if (normalizedRoot === '/' && normalizedBase === '/') {
-					await reloadRoot();
-					setTimeout(() => {
-						treeRef.current?.focusPath(coreTemp, { notify: false });
-					}, 0);
-				} else if (treeRef.current) {
-					await treeRef.current.expandToPath(coreBase);
-					await treeRef.current.refresh(coreBase);
-					treeRef.current.focusPath(coreTemp, { notify: false });
-				}
-			} catch (e) {
-				void e;
-			}
-		},
-		[
-			findAvailableName,
-			normalizedRoot,
-			playgroundClient,
-			reloadRoot,
-			resolveBaseDir,
-			toCore,
-		]
-	);
+		} catch (e) {
+			void e;
+		}
+	};
 
 	useImperativeHandle(
 		ref,
@@ -505,10 +485,8 @@ const PlaygroundFilePickerTree = forwardRef<
 			setContextMenu(null);
 			try {
 				const normalized = normalizePath(targetPath);
-				const baseName = normalized.split('/').pop() || 'download';
-				const isDir = await playgroundClient
-					.isDir(normalized)
-					.catch(() => false);
+				const baseName = basename(normalized) || 'download';
+				const isDir = await playgroundClient.isDir(normalized);
 				if (isDir) {
 					const bytes = await zipDirectory(
 						playgroundClient as any,
@@ -617,12 +595,12 @@ const PlaygroundFilePickerTree = forwardRef<
 						return;
 					}
 
-					const exists = await playgroundClient
-						.fileExists(candidateNormalized)
-						.catch(() => false);
-					const existsDir = await playgroundClient
-						.isDir(candidateNormalized)
-						.catch(() => false);
+					const exists = await playgroundClient.fileExists(
+						candidateNormalized
+					);
+					const existsDir = await playgroundClient.isDir(
+						candidateNormalized
+					);
 					if (
 						(exists || existsDir) &&
 						candidateNormalized !== absPath
@@ -630,7 +608,6 @@ const PlaygroundFilePickerTree = forwardRef<
 						if (isPending) {
 							try {
 								const unique = await findAvailableName(
-									playgroundClient,
 									parent === '/' ? '/' : parent,
 									sanitized
 								);
@@ -650,9 +627,9 @@ const PlaygroundFilePickerTree = forwardRef<
 					try {
 						await playgroundClient.mv(absPath, candidate as any);
 						if (!pending) {
-							const isDir = await playgroundClient
-								.isDir(candidate as any)
-								.catch(() => false);
+							const isDir = await playgroundClient.isDir(
+								candidate as any
+							);
 							candidateIsDir = isDir;
 						}
 						setLastSelectedPath(candidateNormalized);
