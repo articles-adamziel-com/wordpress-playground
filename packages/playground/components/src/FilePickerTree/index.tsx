@@ -2,6 +2,7 @@ import React, {
 	forwardRef,
 	useEffect,
 	useImperativeHandle,
+	useMemo,
 	useRef,
 	useState,
 } from 'react';
@@ -10,14 +11,31 @@ import {
 	__experimentalTreeGridRow as TreeGridRow,
 	__experimentalTreeGridCell as TreeGridCell,
 	Button,
+	Popover,
+	NavigableMenu,
+	MenuItem,
 } from '@wordpress/components';
 import { Icon, chevronDown, chevronRight } from '@wordpress/icons';
 import '@wordpress/components/build-style/style.css';
 import css from './style.module.css';
 import classNames from 'classnames';
 import { file, folder } from '../icons';
+import { dirname, joinPaths } from '@php-wasm/util';
 
 type ExpandedNodePaths = Record<string, boolean>;
+
+export interface AsyncFilesystem {
+	isDir: (path: string) => Promise<boolean>;
+	fileExists: (path: string) => Promise<boolean>;
+	readFileAsBuffer: (path: string) => Promise<Uint8Array>;
+	readFileAsText: (path: string) => Promise<string>;
+	listFiles: (path: string) => Promise<string[]>;
+	writeFile: (path: string, data: Uint8Array | string) => Promise<void>;
+	mkdir: (path: string) => Promise<void>;
+	rmdir: (path: string, options?: { recursive?: boolean }) => Promise<void>;
+	mv: (source: string, destination: string) => Promise<void>;
+	unlink: (path: string) => Promise<void>;
+}
 
 export type FileNode = {
 	name: string;
@@ -26,20 +44,10 @@ export type FileNode = {
 };
 
 export type FilePickerTreeProps = {
-	files: FileNode[];
-	initialPath?: string;
-	error?: string;
-	onSelect?: (path: string) => void;
-	onLoadChildren?: (path: string) => Promise<FileNode[]>;
-	onContextMenu?: (
-		event: React.MouseEvent,
-		node: FileNode,
-		path: string
-	) => void;
-	renamingPath?: string | null;
-	onRename?: (path: string, newName: string) => void;
-	onRenameCancel?: (path: string) => void;
-	autoFocus?: boolean;
+	filesystem: AsyncFilesystem;
+	root?: string; // default '/wordpress'
+	initialSelectedPath?: string;
+	onSelect?: (path: string | null) => void;
 };
 
 export type FilePickerTreeHandle = {
@@ -52,6 +60,9 @@ export type FilePickerTreeHandle = {
 	expandToPath: (path: string) => Promise<void>;
 	refresh: (path: string) => Promise<FileNode[] | undefined>;
 	remapPath: (from: string, to: string) => void;
+	// Filesystem helpers
+	createFile: (absSelectedPath?: string) => Promise<void>;
+	createFolder: (absSelectedPath?: string) => Promise<void>;
 };
 
 function buildPathChain(path: string): string[] {
@@ -82,34 +93,42 @@ export const FilePickerTree = forwardRef<
 	FilePickerTreeProps
 >(function FilePickerTree(
 	{
-		files,
-		initialPath,
-		error,
+		filesystem,
+		root = '/wordpress',
+		initialSelectedPath,
 		onSelect = () => {},
-		onLoadChildren,
-		onContextMenu,
-		renamingPath = null,
-		onRename,
-		onRenameCancel,
-		autoFocus = true,
 	},
 	ref
 ) {
+	const normalizedRoot = useMemo(() => {
+		let p = (root || '/').replace(/\\+/g, '/');
+		if (!p.startsWith('/')) p = `/${p}`;
+		p = p.replace(/\/{2,}/g, '/');
+		if (p.length > 1 && p.endsWith('/')) p = p.slice(0, -1);
+		return p || '/';
+	}, [root]);
+
+	const isValidNameSegment = (name: string) => {
+		if (!name) return false;
+		if (name === '.' || name === '..') return false;
+		return !/[\\/]/.test(name);
+	};
+
 	const [expanded, setExpanded] = useState<ExpandedNodePaths>(() => {
-		if (!initialPath) {
+		if (!initialSelectedPath) {
 			return {};
 		}
 		const initialExpanded: ExpandedNodePaths = {};
-		for (const path of buildPathChain(initialPath)) {
+		for (const path of buildPathChain(initialSelectedPath)) {
 			initialExpanded[path] = true;
 		}
 		return initialExpanded;
 	});
 	const [selectedPath, setSelectedPath] = useState<string | null>(
-		() => initialPath ?? null
+		() => initialSelectedPath ?? null
 	);
 	const [focusedPath, setFocusedPath] = useState<string | null>(
-		() => initialPath ?? null
+		() => initialSelectedPath ?? null
 	);
 	const [lazyChildren, setLazyChildren] = useState<
 		Record<string, FileNode[]>
@@ -155,8 +174,28 @@ export const FilePickerTree = forwardRef<
 		return lazyChildren[path];
 	};
 
+	const listDir = async (fs: AsyncFilesystem, basePath: string) => {
+		const names = await fs.listFiles(basePath);
+		const results: { name: string; type: 'file' | 'folder' }[] = [];
+		for (const name of names) {
+			const childPath =
+				basePath === '/' ? `/${name}` : `${basePath}/${name}`;
+			const isDirectory = await fs.isDir(childPath);
+			results.push({ name, type: isDirectory ? 'folder' : 'file' });
+		}
+		results.sort((a, b) => {
+			if (a.type !== b.type) return a.type === 'folder' ? -1 : 1;
+			return a.name.localeCompare(b.name);
+		});
+		return results as FileNode[];
+	};
+
+	const loadChildren = async (path: string): Promise<FileNode[]> => {
+		return await listDir(filesystem as AsyncFilesystem, path);
+	};
+
 	const loadChildrenForPath = (path: string, node: FileNode) => {
-		if (!onLoadChildren || node.type !== 'folder') {
+		if (node.type !== 'folder') {
 			return node.children;
 		}
 		const existingChildren = node.children ?? lazyChildrenRef.current[path];
@@ -165,7 +204,7 @@ export const FilePickerTree = forwardRef<
 		}
 		setLoadingPaths((prev) => ({ ...prev, [path]: true }));
 		return new Promise<FileNode[]>((resolve) => {
-			onLoadChildren(path)
+			loadChildren(path)
 				.then((children) => {
 					setLazyChildren((prev) => ({
 						...prev,
@@ -187,12 +226,9 @@ export const FilePickerTree = forwardRef<
 	};
 
 	const refreshChildren = (path: string) => {
-		if (!onLoadChildren) {
-			return Promise.resolve(undefined);
-		}
 		setLoadingPaths((prev) => ({ ...prev, [path]: true }));
 		return new Promise<FileNode[]>((resolve) => {
-			onLoadChildren(path)
+			loadChildren(path)
 				.then((children) => {
 					setLazyChildren((prev) => ({
 						...prev,
@@ -243,11 +279,11 @@ export const FilePickerTree = forwardRef<
 			}
 			return next;
 		});
-		if (!onLoadChildren) {
-			return;
-		}
+		// always available in filesystem mode
 
-		let currentChildren: FileNode[] | undefined = files;
+		let currentChildren: FileNode[] | undefined = [
+			{ name: normalizedRoot, type: 'folder' },
+		];
 		let parentPath = '';
 		for (const segmentPath of chain) {
 			const nextNode = currentChildren?.find((child) => {
@@ -325,6 +361,27 @@ export const FilePickerTree = forwardRef<
 		}
 	};
 
+	// Filesystem-specific state and actions (declare before exposing handle)
+	const treeFiles: FileNode[] = useMemo(() => {
+		return [{ name: normalizedRoot, type: 'folder' }];
+	}, [normalizedRoot]);
+
+	const [contextMenu, setContextMenu] = useState<{
+		absPath: string;
+		type: 'file' | 'folder';
+		x: number;
+		y: number;
+	} | null>(null);
+	const [renamingAbsolutePath, setRenamingAbsolutePath] = useState<
+		string | null
+	>(null);
+	const pendingCreateRef = useRef<{
+		type: 'file' | 'folder';
+		tempPath: string;
+	} | null>(null);
+
+	const effectiveRenamingPath = renamingAbsolutePath;
+
 	useImperativeHandle(
 		ref,
 		() => ({
@@ -360,28 +417,39 @@ export const FilePickerTree = forwardRef<
 			expandToPath: async (path: string) => await expandToPath(path),
 			refresh: async (path: string) => await refreshChildren(path),
 			remapPath: remapPathState,
+			createFile: async (absSelectedPath?: string) => {
+				await createNode(absSelectedPath, 'file', 'untitled.php');
+			},
+			createFolder: async (absSelectedPath?: string) => {
+				await createNode(absSelectedPath, 'folder', 'New Folder');
+			},
 		}),
-		[]
+		[selectedPath, refreshChildren, remapPathState, expandToPath]
 	);
 
 	const hasInitializedRef = useRef(false);
-	const pendingInitialExpandRef = useRef<string | null>(initialPath ?? null);
-	const previousInitialPathRef = useRef(initialPath);
+	const pendingInitialExpandRef = useRef<string | null>(
+		initialSelectedPath ?? null
+	);
+	const previousInitialPathRef = useRef(initialSelectedPath);
 
 	useEffect(() => {
-		if (initialPath && initialPath !== previousInitialPathRef.current) {
-			pendingInitialExpandRef.current = initialPath;
-		} else if (!initialPath) {
+		if (
+			initialSelectedPath &&
+			initialSelectedPath !== previousInitialPathRef.current
+		) {
+			pendingInitialExpandRef.current = initialSelectedPath;
+		} else if (!initialSelectedPath) {
 			pendingInitialExpandRef.current = null;
 		}
-		previousInitialPathRef.current = initialPath;
-	}, [initialPath]);
+		previousInitialPathRef.current = initialSelectedPath;
+	}, [initialSelectedPath]);
 	useEffect(() => {
-		if (!initialPath || hasInitializedRef.current) {
+		if (!initialSelectedPath || hasInitializedRef.current) {
 			return;
 		}
 		hasInitializedRef.current = true;
-		const chain = buildPathChain(initialPath);
+		const chain = buildPathChain(initialSelectedPath);
 		setExpanded((prev) => {
 			const next = { ...prev } as ExpandedNodePaths;
 			for (const path of chain) {
@@ -389,60 +457,63 @@ export const FilePickerTree = forwardRef<
 			}
 			return next;
 		});
-		const target = chain[chain.length - 1] || initialPath;
+		const target = chain[chain.length - 1] || initialSelectedPath;
 		setFocusedPath(target);
 		setSelectedPath(target);
-		if (onLoadChildren) {
-			void expandToPath(initialPath);
-		}
-	}, [initialPath, expandToPath, onLoadChildren]);
+		void expandToPath(initialSelectedPath);
+	}, [initialSelectedPath, expandToPath]);
 
 	useEffect(() => {
 		const target = pendingInitialExpandRef.current;
-		if (!target || !onLoadChildren || files.length === 0) {
+		if (!target || treeFiles.length === 0) {
 			return;
 		}
 		pendingInitialExpandRef.current = null;
 		void expandToPath(target);
-	}, [files, expandToPath, onLoadChildren]);
+	}, [treeFiles, expandToPath]);
 
 	useEffect(() => {
 		if (!focusedPath) {
-			if (files.length > 0) {
-				const firstPath = generatePath(files[0]);
+			if (treeFiles.length > 0) {
+				const firstPath = generatePath(treeFiles[0]);
 				setFocusedPath(firstPath);
 			}
 			return;
 		}
-		if (renamingPath && renamingPath === focusedPath) {
+		if (effectiveRenamingPath && effectiveRenamingPath === focusedPath) {
 			return;
 		}
-		if (!autoFocus) {
+		if (false) {
 			return;
 		}
 		focusDomNode(focusedPath);
 	}, [
-		autoFocus,
-		files,
+		treeFiles,
 		focusedPath,
 		generatePath,
-		renamingPath,
+		effectiveRenamingPath,
 		focusDomNode,
 	]);
 
 	useEffect(() => {
-		if (!onLoadChildren || files.length === 0) {
+		if (treeFiles.length === 0) {
 			return;
 		}
-		const rootNode = files[0];
-		if (rootNode?.type !== 'folder' || rootNode.name !== '/') {
+		const rootNode = treeFiles[0];
+		if (rootNode?.type !== 'folder') {
 			return;
 		}
-		setExpanded((prev) => (prev['/'] ? prev : { ...prev, '/': true }));
-		if (!lazyChildrenRef.current['/'] && !loadingPathsRef.current['/']) {
-			void loadChildrenForPath('/', rootNode);
+		const rootPath = rootNode.name;
+		setExpanded((prev) =>
+			prev[rootPath] ? prev : { ...prev, [rootPath]: true }
+		);
+		if (
+			!lazyChildrenRef.current[rootPath] &&
+			!loadingPathsRef.current[rootPath]
+		) {
+			void loadChildrenForPath(rootPath, rootNode);
 		}
-	}, [files, onLoadChildren, loadChildrenForPath]);
+	}, [treeFiles, loadChildrenForPath]);
 
 	useEffect(() => {
 		return () => {
@@ -453,6 +524,107 @@ export const FilePickerTree = forwardRef<
 	}, []);
 
 	const [searchBuffer, setSearchBuffer] = useState('');
+
+	// remove duplicate handle; unified handle is defined above
+
+	const handleInternalContextMenu = (
+		event: React.MouseEvent,
+		node: FileNode,
+		path: string
+	) => {
+		event.preventDefault();
+		event.stopPropagation();
+		setRenamingAbsolutePath(null);
+		setContextMenu({
+			absPath: path,
+			type: node.type,
+			x: event.clientX,
+			y: event.clientY,
+		});
+	};
+
+	const findAvailableName = async (baseDir: string, baseName: string) => {
+		let name = baseName;
+		let counter = 0;
+		const splitExt = (n: string) => {
+			const dot = n.lastIndexOf('.');
+			if (dot > 0) return { stem: n.slice(0, dot), ext: n.slice(dot) };
+			return { stem: n, ext: '' };
+		};
+		const prefix = baseDir === '/' ? '' : baseDir;
+		while (
+			(await filesystem?.fileExists(`${prefix}/${name}`)) ||
+			(await filesystem?.isDir(`${prefix}/${name}`))
+		) {
+			counter += 1;
+			const { stem, ext } = splitExt(baseName);
+			name = `${stem} (${counter})${ext}`;
+		}
+		return name;
+	};
+
+	const createNode = async (
+		absSelectedPath: string | undefined,
+		type: 'file' | 'folder',
+		initialName: string
+	) => {
+		if (!filesystem) return;
+		let base = absSelectedPath || selectedPath || normalizedRoot;
+		// Ensure base is directory
+		try {
+			if (!(await filesystem.isDir(base))) {
+				base = dirname(base);
+			}
+		} catch {
+			base = dirname(base);
+		}
+		const normalizedBase = base;
+		const name = await findAvailableName(normalizedBase, initialName);
+		const tempPath = joinPaths(normalizedBase, name);
+		if (type === 'folder') {
+			await filesystem.mkdir(tempPath);
+		} else {
+			await filesystem.writeFile(tempPath, '');
+		}
+		pendingCreateRef.current = { type, tempPath };
+		setRenamingAbsolutePath(tempPath);
+		await refreshChildren(normalizedBase);
+		// Focus new node
+		setTimeout(() => {
+			setFocusedPath(tempPath);
+			focusDomNode(tempPath);
+		}, 0);
+	};
+
+	const handleDeletePath = async (
+		absSelectedPath: string,
+		type: 'file' | 'folder'
+	) => {
+		if (!filesystem) return;
+		const normalized = absSelectedPath;
+		setContextMenu(null);
+		try {
+			if (type === 'folder') {
+				await filesystem.rmdir(normalized, { recursive: true } as any);
+			} else {
+				await filesystem.unlink(normalized);
+			}
+		} catch {
+			// ignore
+		} finally {
+			setRenamingAbsolutePath(null);
+			const parentDir = dirname(normalized);
+			await refreshChildren(parentDir);
+			// If current selection was removed, notify parent
+			if (
+				selectedPath &&
+				(selectedPath === normalized ||
+					selectedPath.startsWith(`${normalized}/`))
+			) {
+				onSelect(null);
+			}
+		}
+	};
 
 	const handleKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
 		if (event.key.length === 1 && event.key.match(/\S/)) {
@@ -505,25 +677,131 @@ export const FilePickerTree = forwardRef<
 		}
 	};
 
-	if (error) {
-		return (
-			<div className={css['errorContainer']}>
-				<h2>Error loading files</h2>
-				<p>{error}</p>
-			</div>
-		);
-	}
+	// No explicit error UI; upstream can handle errors in filesystem
+
+	// Filesystem-mode rename handlers
+	const handleRename = async (path: string, newName: string) => {
+		const pending = pendingCreateRef.current;
+		const isPending = pending?.tempPath === path;
+		const parent = dirname(path);
+		const sanitized = (newName || '').trim();
+		if (!isValidNameSegment(sanitized)) {
+			if (isPending) {
+				try {
+					if (pending.type === 'folder') {
+						await filesystem.rmdir(path, {
+							recursive: true,
+						} as any);
+					} else {
+						await filesystem.unlink(path);
+					}
+				} catch {
+					/* noop */
+				}
+				pendingCreateRef.current = null;
+			}
+			setRenamingAbsolutePath(isPending ? null : path);
+			return;
+		}
+		let candidate = joinPaths(parent, sanitized);
+		let candidateNormalized = candidate;
+		if (candidateNormalized === path) {
+			setRenamingAbsolutePath(null);
+			if (isPending) pendingCreateRef.current = null;
+			setTimeout(() => {
+				setFocusedPath(candidateNormalized);
+				focusDomNode(candidateNormalized);
+			}, 0);
+			return;
+		}
+		const exists = await filesystem.fileExists(candidateNormalized);
+		const existsDir = await filesystem.isDir(candidateNormalized);
+		if ((exists || existsDir) && candidateNormalized !== path) {
+			if (isPending) {
+				try {
+					const unique = await findAvailableName(
+						parent === '/' ? '/' : parent,
+						sanitized
+					);
+					candidate = joinPaths(parent, unique);
+					candidateNormalized = candidate;
+				} catch {
+					/* noop */
+				}
+			} else {
+				setRenamingAbsolutePath(path);
+				return;
+			}
+		}
+		let candidateIsDir = pending?.type === 'folder';
+		try {
+			await filesystem.mv(path, candidate);
+			if (!pending) {
+				const isDir = await filesystem.isDir(candidate);
+				candidateIsDir = isDir;
+			}
+			if (candidateIsDir) {
+				remapPathState(path, candidateNormalized);
+			}
+			if (selectedPath === path) {
+				onSelect(candidateNormalized);
+			}
+			await refreshChildren(parent);
+			setFocusedPath(candidateNormalized);
+			focusDomNode(candidateNormalized);
+		} catch {
+			if (isPending) {
+				try {
+					if (pending?.type === 'folder') {
+						await filesystem.rmdir(path, {
+							recursive: true,
+						} as any);
+					} else {
+						await filesystem.unlink(path);
+					}
+				} catch {
+					/* noop */
+				}
+			}
+		} finally {
+			pendingCreateRef.current = null;
+			setRenamingAbsolutePath(null);
+		}
+	};
+
+	const handleRenameCancelInternal = async (path: string) => {
+		const pending = pendingCreateRef.current;
+		if (!filesystem || pending?.tempPath !== path) {
+			setRenamingAbsolutePath((prev) => (prev === path ? null : prev));
+			return;
+		}
+		try {
+			if (pending.type === 'folder') {
+				await filesystem.rmdir(path, { recursive: true } as any);
+			} else {
+				await filesystem.unlink(path);
+			}
+		} catch {
+			/* noop */
+		}
+		pendingCreateRef.current = null;
+		setRenamingAbsolutePath(null);
+		const parentDir = dirname(path);
+		await refreshChildren(parentDir);
+		setFocusedPath(parentDir);
+		focusDomNode(parentDir);
+	};
 
 	return (
 		<div onKeyDown={handleKeyDown} ref={containerRef}>
 			<TreeGrid className={css['filePickerTree']}>
-				{files.map((file, index) => (
+				{treeFiles.map((file, index) => (
 					<NodeRow
 						key={file.name}
 						node={file}
 						level={0}
 						position={index + 1}
-						setSize={files.length}
+						setSize={treeFiles.length}
 						expandedNodePaths={expanded}
 						onToggle={toggleNode}
 						selectedNode={selectedPath}
@@ -532,13 +810,89 @@ export const FilePickerTree = forwardRef<
 						selectPath={selectPath}
 						generatePath={generatePath}
 						getChildren={getResolvedChildren}
-						onContextMenu={onContextMenu}
-						renamingPath={renamingPath}
-						onRename={onRename}
-						onRenameCancel={onRenameCancel}
+						onContextMenu={handleInternalContextMenu}
+						renamingPath={effectiveRenamingPath}
+						onRename={handleRename}
+						onRenameCancel={handleRenameCancelInternal}
 					/>
 				))}
 			</TreeGrid>
+			{contextMenu && (
+				<Popover
+					placement="bottom-start"
+					onClose={() => setContextMenu(null)}
+					anchor={{
+						getBoundingClientRect: () => ({
+							x: contextMenu.x,
+							y: contextMenu.y,
+							width: 0,
+							height: 0,
+							top: contextMenu.y,
+							left: contextMenu.x,
+							right: contextMenu.x,
+							bottom: contextMenu.y,
+							toJSON: () => ({}),
+						}),
+						ownerDocument: document,
+					}}
+					noArrow={true}
+					resize={false}
+					focusOnMount="firstElement"
+				>
+					<NavigableMenu role="menu">
+						{contextMenu.type === 'folder' && (
+							<MenuItem
+								role="menuitem"
+								onClick={async () => {
+									setContextMenu(null);
+									await createNode(
+										contextMenu.absPath,
+										'file',
+										'untitled.php'
+									);
+								}}
+							>
+								Create file
+							</MenuItem>
+						)}
+						{contextMenu.type === 'folder' && (
+							<MenuItem
+								role="menuitem"
+								onClick={async () => {
+									setContextMenu(null);
+									await createNode(
+										contextMenu.absPath,
+										'folder',
+										'New Folder'
+									);
+								}}
+							>
+								Create directory
+							</MenuItem>
+						)}
+						<MenuItem
+							role="menuitem"
+							onClick={() => {
+								setContextMenu(null);
+								setRenamingAbsolutePath(contextMenu.absPath);
+							}}
+						>
+							Rename
+						</MenuItem>
+						<MenuItem
+							role="menuitem"
+							onClick={() =>
+								handleDeletePath(
+									contextMenu.absPath,
+									contextMenu.type
+								)
+							}
+						>
+							Delete
+						</MenuItem>
+					</NavigableMenu>
+				</Popover>
+			)}
 		</div>
 	);
 });

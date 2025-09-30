@@ -1,9 +1,10 @@
 import React, { useMemo, useRef, useState } from 'react';
 import styles from './FileExplorer.module.css';
-import PlaygroundFilePickerTree, {
-	type AsyncFilesystem,
-	type PlaygroundFilePickerTreeRef,
-} from './PlaygroundFilePickerTree';
+import { FilePickerTree } from '@wp-playground/components';
+import type {
+	AsyncFilesystem,
+	FilePickerTreeHandle,
+} from '@wp-playground/components';
 import { useAppDispatch } from '../../hooks';
 import { setCode, setCurrentPath } from '../../store';
 import { DEFAULT_WORKSPACE_DIR } from '../../constants';
@@ -71,7 +72,7 @@ export default function FileExplorerSidebar({
 	forceSelectedPath: string | null;
 	setForceSelectedPath: React.Dispatch<React.SetStateAction<string | null>>;
 }) {
-	const treeRef = useRef<PlaygroundFilePickerTreeRef | null>(null);
+	const treeRef = useRef<FilePickerTreeHandle | null>(null);
 	const dispatch = useAppDispatch();
 
 	// Only set initial path once to prevent jumping between directories
@@ -112,7 +113,8 @@ export default function FileExplorerSidebar({
 					<button
 						className={styles.fileExplorerButton}
 						onClick={() =>
-							treeRef.current?.createFile(
+							treeRef.current &&
+							treeRef.current.createFile(
 								lastSelectedPath ?? undefined
 							)
 						}
@@ -123,9 +125,11 @@ export default function FileExplorerSidebar({
 					<button
 						className={styles.fileExplorerButton}
 						onClick={() => {
-							treeRef.current?.createFolder(
-								lastSelectedPath ?? undefined
-							);
+							if (treeRef.current) {
+								treeRef.current.createFolder(
+									lastSelectedPath ?? undefined
+								);
+							}
 						}}
 						title="Create new folder"
 					>
@@ -134,12 +138,12 @@ export default function FileExplorerSidebar({
 				</div>
 			</div>
 			<div className={styles.fileExplorerTree}>
-				<PlaygroundFilePickerTree
+				<FilePickerTree
 					ref={treeRef}
-					filesystem={filesystem ?? undefined}
+					filesystem={filesystem}
 					root={root}
 					key={root}
-					initialPath={treeInitialPath}
+					initialSelectedPath={treeInitialPath}
 					// excludePaths={['/dev', '/internal', '/proc', '/request']}
 					onSelect={async (path) => {
 						setLastSelectedPath(path);
