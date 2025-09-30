@@ -20,9 +20,50 @@ import '@wordpress/components/build-style/style.css';
 import css from './style.module.css';
 import classNames from 'classnames';
 import { file, folder } from '../icons';
-import { dirname, joinPaths } from '@php-wasm/util';
+import { basename, dirname, joinPaths } from '@php-wasm/util';
 
 type ExpandedNodePaths = Record<string, boolean>;
+
+type DropIndicatorState = 'valid' | 'invalid';
+
+type DropIndicator = {
+	path: string;
+	state: DropIndicatorState;
+};
+
+type DropEvaluation = {
+	allowed: boolean;
+	state: DropIndicatorState;
+	destination: string | null;
+};
+
+interface FileSystemEntryBaseLike {
+	readonly isFile: boolean;
+	readonly isDirectory: boolean;
+	readonly name: string;
+}
+
+interface FileSystemFileEntryLike extends FileSystemEntryBaseLike {
+	file: (
+		successCallback: (file: File) => void,
+		errorCallback?: (error: DOMException) => void
+	) => void;
+}
+
+interface FileSystemDirectoryReaderLike {
+	readEntries: (
+		successCallback: (entries: FileSystemEntryLike[]) => void,
+		errorCallback?: (error: DOMException) => void
+	) => void;
+}
+
+interface FileSystemDirectoryEntryLike extends FileSystemEntryBaseLike {
+	createReader: () => FileSystemDirectoryReaderLike;
+}
+
+type FileSystemEntryLike =
+	| FileSystemFileEntryLike
+	| FileSystemDirectoryEntryLike;
 
 export interface AsyncFilesystem {
 	isDir: (path: string) => Promise<boolean>;
@@ -88,6 +129,29 @@ function buildPathChain(path: string): string[] {
 	return chain;
 }
 
+function isDescendantPath(ancestor: string, candidate: string) {
+	if (!ancestor || !candidate) return false;
+	if (ancestor === candidate) return false;
+	const normalizedAncestor =
+		ancestor === '/' ? '/' : ancestor.replace(/\/{2,}/g, '/');
+	const normalizedCandidate = candidate.replace(/\/{2,}/g, '/');
+	if (normalizedAncestor === '/') {
+		return (
+			normalizedCandidate.startsWith('/') && normalizedCandidate !== '/'
+		);
+	}
+	return normalizedCandidate.startsWith(`${normalizedAncestor}/`);
+}
+
+function remapSinglePath(value: string | null, from: string, to: string) {
+	if (!value) return value;
+	if (value === from) return to;
+	if (value.startsWith(from === '/' ? '/' : `${from}/`)) {
+		return to + value.slice(from.length);
+	}
+	return value;
+}
+
 export const FilePickerTree = forwardRef<
 	FilePickerTreeHandle,
 	FilePickerTreeProps
@@ -136,11 +200,29 @@ export const FilePickerTree = forwardRef<
 	const [loadingPaths, setLoadingPaths] = useState<Record<string, boolean>>(
 		{}
 	);
+	const [draggedPath, setDraggedPath] = useState<string | null>(null);
+	const [dropIndicator, setDropIndicator] = useState<DropIndicator | null>(
+		null
+	);
+	const dragExpandTimeoutsRef = useRef<Record<string, number>>({});
 
 	const containerRef = useRef<HTMLDivElement>(null);
 	const searchBufferTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 	const loadingPathsRef = useRef(loadingPaths);
 	const lazyChildrenRef = useRef(lazyChildren);
+	const clearAllDragExpandTimeouts = () => {
+		for (const key of Object.keys(dragExpandTimeoutsRef.current)) {
+			clearTimeout(dragExpandTimeoutsRef.current[key]);
+			delete dragExpandTimeoutsRef.current[key];
+		}
+	};
+	const cancelExpandOnDrag = (path: string) => {
+		const timeoutId = dragExpandTimeoutsRef.current[path];
+		if (timeoutId) {
+			clearTimeout(timeoutId);
+			delete dragExpandTimeoutsRef.current[path];
+		}
+	};
 
 	useEffect(() => {
 		loadingPathsRef.current = loadingPaths;
@@ -223,6 +305,28 @@ export const FilePickerTree = forwardRef<
 					});
 				});
 		});
+	};
+
+	const scheduleExpandOnDrag = (path: string, node: FileNode) => {
+		if (node.type !== 'folder') {
+			return;
+		}
+		if (typeof window === 'undefined') {
+			return;
+		}
+		if (dragExpandTimeoutsRef.current[path]) {
+			return;
+		}
+		dragExpandTimeoutsRef.current[path] = window.setTimeout(() => {
+			setExpanded((prev) => {
+				if (prev[path]) {
+					return prev;
+				}
+				return { ...prev, [path]: true };
+			});
+			void loadChildrenForPath(path, node);
+			delete dragExpandTimeoutsRef.current[path];
+		}, 600);
 	};
 
 	const refreshChildren = (path: string) => {
@@ -352,6 +456,12 @@ export const FilePickerTree = forwardRef<
 			const mapped = remapKey(prev);
 			return mapped ?? prev;
 		});
+	};
+
+	const resetDragState = () => {
+		setDraggedPath(null);
+		setDropIndicator(null);
+		clearAllDragExpandTimeouts();
 	};
 
 	const selectPath = (path: string, notify = true) => {
@@ -520,12 +630,160 @@ export const FilePickerTree = forwardRef<
 			if (searchBufferTimeoutRef.current) {
 				clearTimeout(searchBufferTimeoutRef.current);
 			}
+			clearAllDragExpandTimeouts();
 		};
 	}, []);
 
 	const [searchBuffer, setSearchBuffer] = useState('');
 
 	// remove duplicate handle; unified handle is defined above
+
+	const getDropDestinationDir = (node: FileNode, path: string) => {
+		if (node.type === 'folder') {
+			return path;
+		}
+		const parent = dirname(path);
+		if (!parent) {
+			return '/';
+		}
+		return parent || '/';
+	};
+
+	const evaluateDropTarget = (
+		node: FileNode,
+		path: string,
+		sourcePath: string | null
+	): DropEvaluation => {
+		const destinationDir = getDropDestinationDir(node, path);
+		if (!destinationDir) {
+			return { allowed: false, state: 'invalid', destination: null };
+		}
+		if (sourcePath) {
+			if (destinationDir === sourcePath) {
+				return { allowed: false, state: 'invalid', destination: null };
+			}
+			if (isDescendantPath(sourcePath, destinationDir)) {
+				return { allowed: false, state: 'invalid', destination: null };
+			}
+		}
+		return { allowed: true, state: 'valid', destination: destinationDir };
+	};
+
+	const handleNodeDragStart = (
+		event: React.DragEvent,
+		node: FileNode,
+		path: string
+	) => {
+		if (node.type !== 'folder' && node.type !== 'file') {
+			return;
+		}
+		setDraggedPath(path);
+		setDropIndicator(null);
+		if (event.dataTransfer) {
+			event.dataTransfer.effectAllowed = 'move';
+			event.dataTransfer.setData(
+				'application/x-wp-playground-path',
+				path
+			);
+			event.dataTransfer.setData('text/plain', path);
+		}
+	};
+
+	const handleNodeDragEnd = () => {
+		resetDragState();
+	};
+
+	const handleNodeDragEnter = (
+		event: React.DragEvent,
+		node: FileNode,
+		path: string
+	) => {
+		const evaluation = evaluateDropTarget(node, path, draggedPath);
+		if (evaluation.allowed) {
+			if (node.type === 'folder') {
+				scheduleExpandOnDrag(path, node);
+			}
+		}
+		setDropIndicator((prev) => {
+			if (prev?.path === path && prev.state === evaluation.state) {
+				return prev;
+			}
+			return { path, state: evaluation.state };
+		});
+	};
+
+	const handleNodeDragOver = (
+		event: React.DragEvent,
+		node: FileNode,
+		path: string
+	) => {
+		const evaluation = evaluateDropTarget(node, path, draggedPath);
+		if (evaluation.allowed && evaluation.destination) {
+			event.preventDefault();
+			if (event.dataTransfer) {
+				event.dataTransfer.dropEffect = draggedPath ? 'move' : 'copy';
+			}
+			if (node.type === 'folder') {
+				scheduleExpandOnDrag(path, node);
+			}
+			setDropIndicator((prev) => {
+				if (prev?.path === path && prev.state === evaluation.state) {
+					return prev;
+				}
+				return { path, state: evaluation.state };
+			});
+		} else {
+			if (event.dataTransfer) {
+				event.dataTransfer.dropEffect = 'none';
+			}
+			cancelExpandOnDrag(path);
+			setDropIndicator((prev) => {
+				if (prev?.path === path && prev.state === 'invalid') {
+					return prev;
+				}
+				return { path, state: 'invalid' };
+			});
+		}
+	};
+
+	const handleNodeDragLeave = (
+		event: React.DragEvent,
+		node: FileNode,
+		path: string
+	) => {
+		cancelExpandOnDrag(path);
+		const related = event.relatedTarget as Node | null;
+		if (related && event.currentTarget.contains(related)) {
+			return;
+		}
+		setDropIndicator((prev) => (prev?.path === path ? null : prev));
+	};
+
+	const handleNodeDrop = async (
+		event: React.DragEvent,
+		node: FileNode,
+		path: string
+	) => {
+		const sourcePath = draggedPath;
+		const evaluation = evaluateDropTarget(node, path, sourcePath);
+		if (!evaluation.allowed || !evaluation.destination) {
+			resetDragState();
+			return;
+		}
+		event.preventDefault();
+		event.stopPropagation();
+		cancelExpandOnDrag(path);
+		setDropIndicator(null);
+		try {
+			if (sourcePath) {
+				await moveNode(sourcePath, evaluation.destination);
+			} else {
+				await importExternalItems(event, evaluation.destination);
+			}
+		} finally {
+			resetDragState();
+		}
+	};
 
 	const handleInternalContextMenu = (
 		event: React.MouseEvent,
@@ -594,6 +852,196 @@ export const FilePickerTree = forwardRef<
 			setFocusedPath(tempPath);
 			focusDomNode(tempPath);
 		}, 0);
+	};
+
+	const pathExists = async (path: string) => {
+		if (!filesystem) return false;
+		try {
+			if (await filesystem.fileExists(path)) {
+				return true;
+			}
+		} catch {
+			// ignore
+		}
+		try {
+			if (await filesystem.isDir(path)) {
+				return true;
+			}
+		} catch {
+			// ignore
+		}
+		return false;
+	};
+
+	const ensureDirectory = async (path: string) => {
+		if (!filesystem) return;
+		try {
+			await filesystem.mkdir(path);
+		} catch (error) {
+			const exists = await filesystem.isDir(path).catch(() => false);
+			if (!exists) {
+				throw error;
+			}
+		}
+	};
+
+	const moveNode = async (sourcePath: string, destinationDir: string) => {
+		if (!filesystem) return;
+		const fileName = basename(sourcePath);
+		const destinationPath = joinPaths(destinationDir, fileName);
+		if (destinationPath === sourcePath) {
+			return;
+		}
+		if (await pathExists(destinationPath)) {
+			return;
+		}
+		const sourceParent = dirname(sourcePath);
+		try {
+			await filesystem.mv(sourcePath, destinationPath);
+			remapPathState(sourcePath, destinationPath);
+			const mappedSelected = remapSinglePath(
+				selectedPath,
+				sourcePath,
+				destinationPath
+			);
+			if (
+				selectedPath &&
+				(selectedPath === sourcePath ||
+					selectedPath.startsWith(`${sourcePath}/`))
+			) {
+				onSelect(mappedSelected);
+			}
+			setFocusedPath((prev) =>
+				remapSinglePath(prev, sourcePath, destinationPath)
+			);
+			setExpanded((prev) => ({
+				...prev,
+				[destinationDir]: true,
+			}));
+			await Promise.all([
+				refreshChildren(sourceParent),
+				refreshChildren(destinationDir),
+			]);
+			setSelectedPath((prev) =>
+				remapSinglePath(prev, sourcePath, destinationPath)
+			);
+			focusDomNode(destinationPath);
+		} catch {
+			// ignore move errors
+		}
+	};
+
+	const getEntryFromItem = (item: DataTransferItem) => {
+		const maybeItem = item as DataTransferItem & {
+			webkitGetAsEntry?: () => FileSystemEntryLike | null;
+		};
+		if (maybeItem.webkitGetAsEntry) {
+			return maybeItem.webkitGetAsEntry() as FileSystemEntryLike | null;
+		}
+		return null;
+	};
+
+	const fileFromEntry = (entry: FileSystemFileEntryLike) => {
+		return new Promise<File>((resolve, reject) => {
+			entry.file(resolve, reject);
+		});
+	};
+
+	const importFileBlob = async (file: File, destinationDir: string) => {
+		if (!filesystem) return;
+		const safeName = file.name || 'untitled';
+		const targetName = await findAvailableName(destinationDir, safeName);
+		const targetPath = joinPaths(destinationDir, targetName);
+		const buffer = new Uint8Array(await file.arrayBuffer());
+		await filesystem.writeFile(targetPath, buffer);
+	};
+
+	const importFileEntry = async (
+		entry: FileSystemFileEntryLike,
+		destinationDir: string
+	) => {
+		const file = await fileFromEntry(entry);
+		await importFileBlob(file, destinationDir);
+	};
+
+	const importDirectoryEntry = async (
+		entry: FileSystemDirectoryEntryLike,
+		destinationDir: string
+	) => {
+		const folderName = await findAvailableName(
+			destinationDir,
+			entry.name || 'New Folder'
+		);
+		const folderPath = joinPaths(destinationDir, folderName);
+		await ensureDirectory(folderPath);
+		const reader = entry.createReader();
+		const readEntries = () =>
+			new Promise<FileSystemEntryLike[]>((resolve, reject) => {
+				reader.readEntries(
+					(entries) => resolve(Array.from(entries)),
+					reject
+				);
+			});
+		while (true) {
+			const batch = await readEntries();
+			if (!batch.length) {
+				break;
+			}
+			for (const child of batch) {
+				if (child.isFile) {
+					await importFileEntry(
+						child as FileSystemFileEntryLike,
+						folderPath
+					);
+				} else if (child.isDirectory) {
+					await importDirectoryEntry(
+						child as FileSystemDirectoryEntryLike,
+						folderPath
+					);
+				}
+			}
+		}
+	};
+
+	const importExternalItems = async (
+		event: React.DragEvent,
+		destinationDir: string
+	) => {
+		if (!filesystem) return;
+		const items = event.dataTransfer?.items
+			? Array.from(event.dataTransfer.items)
+			: [];
+		const entries = items
+			.filter((item) => item.kind === 'file')
+			.map((item) => getEntryFromItem(item))
+			.filter((entry): entry is FileSystemEntryLike => Boolean(entry));
+		if (entries.length > 0) {
+			for (const entry of entries) {
+				if (entry.isFile) {
+					await importFileEntry(
+						entry as FileSystemFileEntryLike,
+						destinationDir
+					);
+				} else if (entry.isDirectory) {
+					await importDirectoryEntry(
+						entry as FileSystemDirectoryEntryLike,
+						destinationDir
+					);
+				}
+			}
+		} else {
+			const files = event.dataTransfer?.files
+				? Array.from(event.dataTransfer.files)
+				: [];
+			for (const file of files) {
+				await importFileBlob(file, destinationDir);
+			}
+		}
+		await refreshChildren(destinationDir);
+		setExpanded((prev) => ({
+			...prev,
+			[destinationDir]: true,
+		}));
 	};
 
 	const handleDeletePath = async (
@@ -814,6 +1262,14 @@ export const FilePickerTree = forwardRef<
 						renamingPath={effectiveRenamingPath}
 						onRename={handleRename}
 						onRenameCancel={handleRenameCancelInternal}
+						dropIndicator={dropIndicator}
+						onDragStart={handleNodeDragStart}
+						onDragEnd={handleNodeDragEnd}
+						onDragEnter={handleNodeDragEnter}
+						onDragOver={handleNodeDragOver}
+						onDragLeave={handleNodeDragLeave}
+						onDrop={handleNodeDrop}
+						rootPath={normalizedRoot}
 					/>
 				))}
 			</TreeGrid>
@@ -923,6 +1379,26 @@ const NodeRow: React.FC<{
 	onRename?: (path: string, newName: string) => void;
 	onRenameCancel?: (path: string) => void;
 	parentPath?: string;
+	dropIndicator: DropIndicator | null;
+	onDragStart?: (
+		event: React.DragEvent,
+		node: FileNode,
+		path: string
+	) => void;
+	onDragEnd?: (event: React.DragEvent, node: FileNode, path: string) => void;
+	onDragEnter?: (
+		event: React.DragEvent,
+		node: FileNode,
+		path: string
+	) => void;
+	onDragOver?: (event: React.DragEvent, node: FileNode, path: string) => void;
+	onDragLeave?: (
+		event: React.DragEvent,
+		node: FileNode,
+		path: string
+	) => void;
+	onDrop?: (event: React.DragEvent, node: FileNode, path: string) => void;
+	rootPath: string;
 }> = ({
 	node,
 	level,
@@ -941,6 +1417,14 @@ const NodeRow: React.FC<{
 	onRename,
 	onRenameCancel,
 	parentPath = '',
+	dropIndicator,
+	onDragStart,
+	onDragEnd,
+	onDragEnter,
+	onDragOver,
+	onDragLeave,
+	onDrop,
+	rootPath,
 }) => {
 	const path = generatePath(node, parentPath);
 	const isExpanded = expandedNodePaths[path];
@@ -948,6 +1432,20 @@ const NodeRow: React.FC<{
 	const renameInputRef = useRef<HTMLInputElement>(null);
 	const [renameValue, setRenameValue] = useState(node.name);
 	const renameHandledRef = useRef(false);
+	const isDropTarget = dropIndicator?.path === path;
+	const isDropTargetValid = isDropTarget && dropIndicator?.state === 'valid';
+	const isDropTargetInvalid =
+		isDropTarget && dropIndicator?.state === 'invalid';
+	const isDraggable = !isRenaming && path !== rootPath;
+
+	const dragHandlers = {
+		onDragEnter: (event: React.DragEvent) =>
+			onDragEnter?.(event, node, path),
+		onDragOver: (event: React.DragEvent) => onDragOver?.(event, node, path),
+		onDragLeave: (event: React.DragEvent) =>
+			onDragLeave?.(event, node, path),
+		onDrop: (event: React.DragEvent) => onDrop?.(event, node, path),
+	};
 
 	const resolvedChildren = getChildren(node, path) ?? [];
 
@@ -1084,10 +1582,15 @@ const NodeRow: React.FC<{
 												selectedNode === path,
 											[css['focused']]:
 												focusedNode === path,
+											[css['dropTarget']]:
+												isDropTargetValid,
+											[css['dropTargetInvalid']]:
+												isDropTargetInvalid,
 										}
 									)}
 									data-path={path}
 									onContextMenu={handleContextMenu}
+									{...dragHandlers}
 								>
 									<FileName
 										node={node}
@@ -1111,6 +1614,14 @@ const NodeRow: React.FC<{
 								</form>
 							) : (
 								<Button
+									{...dragHandlers}
+									draggable={isDraggable}
+									onDragStart={(event: any) =>
+										onDragStart?.(event, node, path)
+									}
+									onDragEnd={(event: any) =>
+										onDragEnd?.(event, node, path)
+									}
 									onClick={() => {
 										if (node.type === 'folder') {
 											toggleOpen();
@@ -1130,6 +1641,10 @@ const NodeRow: React.FC<{
 												selectedNode === path,
 											[css['focused']]:
 												focusedNode === path,
+											[css['dropTarget']]:
+												isDropTargetValid,
+											[css['dropTargetInvalid']]:
+												isDropTargetInvalid,
 										}
 									)}
 									data-path={path}
@@ -1169,6 +1684,14 @@ const NodeRow: React.FC<{
 						onRename={onRename}
 						onRenameCancel={onRenameCancel}
 						parentPath={path}
+						dropIndicator={dropIndicator}
+						onDragStart={onDragStart}
+						onDragEnd={onDragEnd}
+						onDragEnter={onDragEnter}
+						onDragOver={onDragOver}
+						onDragLeave={onDragLeave}
+						onDrop={onDrop}
+						rootPath={rootPath}
 					/>
 				))}
 		</>
