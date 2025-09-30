@@ -165,8 +165,10 @@ const validRemoteOrigins = [
 	// Allow hosting remote from same origin
 	location.origin,
 	'http://localhost',
+	'http://localhost:5400',
 	'https://localhost',
 	'http://127.0.0.1',
+	'http://127.0.0.1:5400',
 	'https://127.0.0.1',
 	...additionalRemoteOrigins,
 ];
