@@ -9,6 +9,52 @@ All notable changes to this project are documented in this file by a CI job
 that runs on every NPM release. The file follows the [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 format.
 
+## [v3.0.7] (2025-10-01) 
+
+### Tools
+
+
+#### PHP WebAssembly
+
+- [PHP] Add "ls" and "pwd" CLI commands. ([#2701](https://github.com/WordPress/wordpress-playground/pull/2701))
+
+### Documentation
+
+- Revert Quick guide to the English version. ([#2709](https://github.com/WordPress/wordpress-playground/pull/2709))
+- [i18n] Add French translation for quick-start-guide.md. ([#2710](https://github.com/WordPress/wordpress-playground/pull/2710))
+
+### PHP WebAssembly
+
+- Preserve chroot across all worker-managed PHP instances. ([#2704](https://github.com/WordPress/wordpress-playground/pull/2704))
+- [PHP] Allow removing CWD during runtime rotation. ([#2714](https://github.com/WordPress/wordpress-playground/pull/2714))
+- [PHP] Do not reap() PHP in the worker until the streaming response ends. ([#2703](https://github.com/WordPress/wordpress-playground/pull/2703))
+- [PHP] Move registerWorkerListeners() from a specific worker to the parent PHPWorker. ([#2705](https://github.com/WordPress/wordpress-playground/pull/2705))
+- [PHP] Support subprocesses in cli() calls. ([#2702](https://github.com/WordPress/wordpress-playground/pull/2702))
+
+### Website
+
+- IDE-like PHP playground. ([#2699](https://github.com/WordPress/wordpress-playground/pull/2699))
+
+### Internal
+
+- [PHP utils] Export splitShellCommand. ([#2706](https://github.com/WordPress/wordpress-playground/pull/2706))
+
+### Bug Fixes
+
+- CORS proxy: Fix custom origin validation during deployment. ([#2698](https://github.com/WordPress/wordpress-playground/pull/2698))
+
+### Various
+
+- [i18] Add French translation for launch.md. ([#2697](https://github.com/WordPress/wordpress-playground/pull/2697))
+- [i18n] Add French translation for quick-start-guide.md. ([#2692](https://github.com/WordPress/wordpress-playground/pull/2692))
+
+### Contributors
+
+The following contributors merged PRs in this release:
+
+@adamziel @beryl-dlg @brandonpayton @fellyph
+
+
 ## [v3.0.6] (2025-09-29) 
 
 ### Documentation
