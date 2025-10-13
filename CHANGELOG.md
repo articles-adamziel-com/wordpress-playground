@@ -4,6 +4,19 @@ All notable changes to this project are documented in this file by a CI job
 that runs on every NPM release. The file follows the [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 format.
 
+## [v3.0.12] (2025-10-13) 
+
+### Internal
+
+- [CI] Remove a few predefined runner files before releasing npm packages. ([#2775](https://github.com/WordPress/wordpress-playground/pull/2775))
+
+### Contributors
+
+The following contributors merged PRs in this release:
+
+@adamziel
+
+
 ## [v3.0.11] (2025-10-13) 
 
 
