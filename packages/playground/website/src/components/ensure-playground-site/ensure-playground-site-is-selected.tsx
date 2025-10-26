@@ -118,8 +118,15 @@ export function EnsurePlaygroundSiteIsSelected({
 			const newParams = new URLSearchParams(url?.search);
 			oldParams.delete(notRefreshingParam);
 			newParams.delete(notRefreshingParam);
+
+			// Also check if the hash (which may contain a blueprint) has changed
+			const oldHash = prevUrl?.hash || '';
+			const newHash = url?.hash || '';
+
 			const avoidUnnecessaryTempSiteReload =
-				activeSite && oldParams.toString() === newParams.toString();
+				activeSite &&
+				oldParams.toString() === newParams.toString() &&
+				oldHash === newHash;
 			if (avoidUnnecessaryTempSiteReload) {
 				return;
 			}
