@@ -11,9 +11,13 @@ import { SiteInfoPanel } from './site-info-panel';
 import classNames from 'classnames';
 
 import { forwardRef, useState } from 'react';
-import { setSiteManagerOpen } from '../../lib/state/redux/slice-ui';
+import {
+	setSiteManagerOpen,
+	setSiteListCollapsed,
+} from '../../lib/state/redux/slice-ui';
 import { BlueprintsPanel } from './blueprints-panel';
-import { ResizableBox } from '@wordpress/components';
+import { ResizableBox, Button } from '@wordpress/components';
+import { chevronLeft, chevronRight } from '@wordpress/icons';
 
 const SITE_INFO_MIN_WIDTH = 400;
 const SITE_INFO_DEFAULT_WIDTH = 555;
@@ -32,6 +36,9 @@ export const SiteManager = forwardRef<
 	const fullScreenSections = useMediaQuery('(max-width: 875px)');
 	const activeSiteManagerSection = useAppSelector(
 		(state) => state.ui.siteManagerSection
+	);
+	const siteListCollapsed = useAppSelector(
+		(state) => state.ui.siteListCollapsed
 	);
 
 	// Load saved width from localStorage or use default
@@ -145,7 +152,24 @@ export const SiteManager = forwardRef<
 	}
 	return (
 		<div className={classNames(css.siteManager, className)} ref={ref}>
-			{sidebar}
+			{!siteListCollapsed && sidebar}
+			{activePanel && (
+				<div className={css.toggleButtonWrapper}>
+					<Button
+						icon={siteListCollapsed ? chevronRight : chevronLeft}
+						label={
+							siteListCollapsed
+								? 'Expand site list'
+								: 'Collapse site list'
+						}
+						onClick={() =>
+							dispatch(setSiteListCollapsed(!siteListCollapsed))
+						}
+						className={css.toggleButton}
+						showTooltip={true}
+					/>
+				</div>
+			)}
 			{activePanel}
 		</div>
 	);

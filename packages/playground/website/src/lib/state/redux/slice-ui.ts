@@ -20,6 +20,7 @@ export interface UIState {
 	offline: boolean;
 	siteManagerIsOpen: boolean;
 	siteManagerSection: SiteManagerSection;
+	siteListCollapsed: boolean;
 }
 
 const query = new URL(document.location.href).searchParams;
@@ -56,6 +57,7 @@ const initialState: UIState = {
 		// quite a confusing experience.
 		!isMobile,
 	siteManagerSection: 'site-details',
+	siteListCollapsed: false,
 };
 
 const uiSlice = createSlice({
@@ -96,6 +98,9 @@ const uiSlice = createSlice({
 			action: PayloadAction<SiteManagerSection>
 		) => {
 			state.siteManagerSection = action.payload;
+		},
+		setSiteListCollapsed: (state, action: PayloadAction<boolean>) => {
+			state.siteListCollapsed = action.payload;
 		},
 	},
 });
@@ -138,6 +143,7 @@ export const {
 	setOffline,
 	setSiteManagerOpen,
 	setSiteManagerSection,
+	setSiteListCollapsed,
 } = uiSlice.actions;
 
 export default uiSlice.reducer;
