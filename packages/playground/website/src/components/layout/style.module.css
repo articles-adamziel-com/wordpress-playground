@@ -1,5 +1,5 @@
 :root {
-	--site-manager-site-list-width: 320px;
+	--site-manager-site-list-width: 300px;
 	--site-manager-site-info-min-width: 555px;
 	--site-manager-width-desktop: calc(
 		var(--site-manager-site-list-width) +
