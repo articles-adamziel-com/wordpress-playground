@@ -39,6 +39,10 @@ const SiteFileBrowser = lazy(() =>
 	import('../site-file-browser').then((m) => ({ default: m.SiteFileBrowser }))
 );
 
+const SiteTerminal = lazy(() =>
+	import('./site-terminal').then((m) => ({ default: m.SiteTerminal }))
+);
+
 const LAST_TAB_STORAGE_KEY = 'playground-site-last-tabs';
 
 function getSiteLastTab(siteSlug: string): string | null {
@@ -413,6 +417,10 @@ export function SiteInfoPanel({
 								title: 'File browser',
 							},
 							{
+								name: 'terminal',
+								title: 'Terminal',
+							},
+							{
 								name: 'logs',
 								title: 'Logs',
 							},
@@ -467,6 +475,31 @@ export function SiteInfoPanel({
 												documentRoot={documentRoot}
 											/>
 										)}
+									</Suspense>
+								</div>
+								<div
+									className={classNames(
+										css.tabContents,
+										css.fileBrowserTab,
+										{
+											[css.tabHidden]:
+												tab.name !== 'terminal',
+										}
+									)}
+									hidden={tab.name !== 'terminal'}
+								>
+									<Suspense
+										fallback={
+											<div className={css.padded}>
+												Loading terminal...
+											</div>
+										}
+									>
+										<SiteTerminal
+											key={site.slug}
+											site={site}
+											isVisible={tab.name === 'terminal'}
+										/>
 									</Suspense>
 								</div>
 								<div
