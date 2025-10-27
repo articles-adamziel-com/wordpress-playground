@@ -6,7 +6,7 @@ import {
 	type SetStateAction,
 } from 'react';
 import { Icon } from '@wordpress/components';
-import { file as folderIcon, page as fileIcon } from '@wordpress/icons';
+import { file as folderIcon, page as fileIcon, upload as uploadIcon } from '@wordpress/icons';
 import styles from './file-explorer.module.css';
 import {
 	FilePickerTree,
@@ -14,7 +14,7 @@ import {
 	type FilePickerTreeHandle,
 } from '@wp-playground/components';
 import { logger } from '@php-wasm/logger';
-import { dirname, normalizePath } from '@php-wasm/util';
+import { dirname, normalizePath, joinPaths } from '@php-wasm/util';
 
 export const MAX_INLINE_FILE_BYTES = 1024 * 1024; // 1MB
 
@@ -70,6 +70,7 @@ export function FileExplorerSidebar({
 	documentRoot,
 }: FileExplorerSidebarProps) {
 	const treeRef = useRef<FilePickerTreeHandle | null>(null);
+	const fileInputRef = useRef<HTMLInputElement | null>(null);
 
 	const treeInitialPath = useMemo(() => {
 		return normalizePath(
@@ -131,6 +132,40 @@ export function FileExplorerSidebar({
 		}
 	};
 
+	const handleUploadFiles = async (files: FileList | null) => {
+		if (!files || files.length === 0) {
+			return;
+		}
+
+		try {
+			const targetDir = lastSelectedPath
+				? await filesystem.isDir(lastSelectedPath).then(isDir => isDir ? lastSelectedPath : dirname(lastSelectedPath)).catch(() => documentRoot)
+				: documentRoot;
+
+			for (let i = 0; i < files.length; i++) {
+				const file = files[i];
+				const safeName = file.name || 'untitled';
+				const targetPath = joinPaths(targetDir, safeName);
+				const buffer = new Uint8Array(await file.arrayBuffer());
+				await filesystem.writeFile(targetPath, buffer);
+			}
+
+			// Refresh the tree to show the uploaded files
+			if (treeRef.current) {
+				await treeRef.current.refresh(targetDir);
+			}
+
+			await onShowMessage(
+				files.length === 1
+					? `Uploaded ${files[0].name}`
+					: `Uploaded ${files.length} files`
+			);
+		} catch (error) {
+			logger.error('Could not upload files', error);
+			await onShowMessage('Could not upload files.');
+		}
+	};
+
 	return (
 		<div className={styles.fileExplorerContainer}>
 			<div className={styles.fileExplorerHeader}>
@@ -168,6 +203,28 @@ export function FileExplorerSidebar({
 						<Icon icon={folderIcon} size={16} />
 						New Folder
 					</button>
+					<button
+						className={styles.fileExplorerButton}
+						type="button"
+						onClick={() => {
+							fileInputRef.current?.click();
+						}}
+						title="Upload file(s)"
+					>
+						<Icon icon={uploadIcon} size={16} />
+						Upload
+					</button>
+					<input
+						ref={fileInputRef}
+						type="file"
+						multiple
+						style={{ display: 'none' }}
+						onChange={(e) => {
+							void handleUploadFiles(e.target.files);
+							// Reset the input so the same file can be uploaded again
+							e.target.value = '';
+						}}
+					/>
 				</div>
 			</div>
 			<div className={styles.fileExplorerTree}>

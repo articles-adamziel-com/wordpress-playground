@@ -8,6 +8,7 @@ import type {
 import { useAppDispatch } from '../../hooks';
 import { setCode, setCurrentPath } from '../../store';
 import { DEFAULT_WORKSPACE_DIR } from '../../constants';
+import { joinPaths } from '@php-wasm/util';
 
 const MAX_INLINE_BYTES = 1024 * 1024; // 1MB
 
@@ -75,6 +76,7 @@ export default function FileExplorerSidebar({
 	setForceSelectedPath: React.Dispatch<React.SetStateAction<string | null>>;
 }) {
 	const treeRef = useRef<FilePickerTreeHandle | null>(null);
+	const fileInputRef = useRef<HTMLInputElement | null>(null);
 	const dispatch = useAppDispatch();
 
 	// Only set initial path once to prevent jumping between directories
@@ -93,6 +95,33 @@ export default function FileExplorerSidebar({
 	);
 
 	const [root, setRoot] = useState<string>(DEFAULT_WORKSPACE_DIR);
+
+	const handleUploadFiles = async (files: FileList | null) => {
+		if (!files || files.length === 0) {
+			return;
+		}
+
+		try {
+			const targetDir = lastSelectedPath
+				? await filesystem.isDir(lastSelectedPath).then(isDir => isDir ? lastSelectedPath : dirnameSafe(lastSelectedPath)).catch(() => root)
+				: root;
+
+			for (let i = 0; i < files.length; i++) {
+				const file = files[i];
+				const safeName = file.name || 'untitled';
+				const targetPath = joinPaths(targetDir, safeName);
+				const buffer = new Uint8Array(await file.arrayBuffer());
+				await filesystem.writeFile(targetPath, buffer);
+			}
+
+			// Refresh the tree to show the uploaded files
+			if (treeRef.current) {
+				await treeRef.current.refresh(targetDir);
+			}
+		} catch (error) {
+			console.error('Could not upload files', error);
+		}
+	};
 
 	return (
 		<div className={styles.fileExplorerContainer}>
@@ -137,6 +166,26 @@ export default function FileExplorerSidebar({
 					>
 						New Folder
 					</button>
+					<button
+						className={styles.fileExplorerButton}
+						onClick={() => {
+							fileInputRef.current?.click();
+						}}
+						title="Upload file(s)"
+					>
+						Upload
+					</button>
+					<input
+						ref={fileInputRef}
+						type="file"
+						multiple
+						style={{ display: 'none' }}
+						onChange={(e) => {
+							void handleUploadFiles(e.target.files);
+							// Reset the input so the same file can be uploaded again
+							e.target.value = '';
+						}}
+					/>
 				</div>
 			</div>
 			<div className={styles.fileExplorerTree}>

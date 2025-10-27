@@ -1115,6 +1115,26 @@ export const FilePickerTree = forwardRef<
 		}
 	};
 
+	const handleDownloadFile = async (absFilePath: string) => {
+		if (!filesystem) return;
+		setContextMenu(null);
+		try {
+			const data = await filesystem.readFileAsBuffer(absFilePath);
+			const blob = new Blob([data]);
+			const url = URL.createObjectURL(blob);
+			const filename = basename(absFilePath);
+			const a = document.createElement('a');
+			a.href = url;
+			a.download = filename;
+			document.body.appendChild(a);
+			a.click();
+			document.body.removeChild(a);
+			setTimeout(() => URL.revokeObjectURL(url), 60_000);
+		} catch {
+			// ignore download errors
+		}
+	};
+
 	const handleKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
 		// Skip type-ahead when renaming to avoid interfering with rename input
 		if (renamingAbsolutePath) {
@@ -1391,6 +1411,14 @@ export const FilePickerTree = forwardRef<
 						>
 							Rename
 						</MenuItem>
+						{contextMenu.type === 'file' && (
+							<MenuItem
+								role="menuitem"
+								onClick={() => handleDownloadFile(contextMenu.absPath)}
+							>
+								Download
+							</MenuItem>
+						)}
 						<MenuItem
 							role="menuitem"
 							onClick={() =>
