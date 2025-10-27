@@ -21,6 +21,7 @@ import { persistTemporarySite } from '../../lib/state/redux/persist-temporary-si
 import type { SiteStorageType } from '../../lib/state/redux/slice-sites';
 import { logger } from '@php-wasm/logger';
 import { isOpfsAvailable } from '../../lib/state/opfs/opfs-site-storage';
+import css from './style.module.css';
 
 type StorageOption = Extract<SiteStorageType, 'opfs' | 'local-fs'>;
 
@@ -49,6 +50,7 @@ export function SaveSiteModal() {
 	);
 
 	const localFsAvailability = useLocalFsAvailability(clientInfo?.client);
+	const localIsAvailable = localFsAvailability === 'available';
 
 	const initialName = useMemo(() => site?.metadata?.name ?? '', [site]);
 	const [name, setName] = useState(initialName);
@@ -71,6 +73,7 @@ export function SaveSiteModal() {
 	const [submitError, setSubmitError] = useState<string | null>(null);
 	const [isSubmitting, setIsSubmitting] = useState(false);
 	const nameInputRef = useRef<HTMLInputElement>(null);
+	const storageOptionsRef = useRef<HTMLDivElement>(null);
 
 	useEffect(() => {
 		setName(initialName);
@@ -116,6 +119,27 @@ export function SaveSiteModal() {
 		setDirectoryError(null);
 	}, [site?.slug]);
 
+	// Mark unavailable storage options as disabled in the DOM for styling
+	useEffect(() => {
+		if (!storageOptionsRef.current) return;
+
+		const options = storageOptionsRef.current.querySelectorAll<HTMLElement>(
+			'.components-radio-control__option'
+		);
+		options.forEach((option, index) => {
+			const isOpfsOption = index === 0;
+			const isLocalFsOption = index === 1;
+
+			if (isOpfsOption && !isOpfsAvailable) {
+				option.setAttribute('data-unavailable', 'true');
+			} else if (isLocalFsOption && !localIsAvailable) {
+				option.setAttribute('data-unavailable', 'true');
+			} else {
+				option.removeAttribute('data-unavailable');
+			}
+		});
+	}, [localIsAvailable]);
+
 	// Monitor save progress through opfsSync status
 	const saveProgress = clientInfo?.opfsSync;
 	const isSaving = isSubmitting || saveProgress?.status === 'syncing';
@@ -142,7 +166,6 @@ export function SaveSiteModal() {
 		dispatch(setActiveModal(null));
 	};
 
-	const localIsAvailable = localFsAvailability === 'available';
 	const localUnavailableMessage =
 		localFsAvailability === 'not-available'
 			? 'Not available in this browser'
@@ -320,26 +343,28 @@ export function SaveSiteModal() {
 					data-bwignore="true"
 					disabled={isSaving}
 				/>
-				<RadioControl
-					label="Storage location"
-					selected={selectedStorage}
-					options={[
-						{
-							label:
-								'Save in this browser' +
-								(!isOpfsAvailable ? ' (not available)' : ''),
-							value: 'opfs',
-						},
-						{
-							label:
-								'Save to a local directory' +
-								(!localIsAvailable ? ' (not available)' : ''),
-							value: 'local-fs',
-						},
-					]}
-					onChange={(value) => chooseStorage(value as StorageOption)}
-					disabled={isSaving}
-				/>
+				<div ref={storageOptionsRef} className={css.storageOptions}>
+					<RadioControl
+						label="Storage location"
+						selected={selectedStorage}
+						options={[
+							{
+								label:
+									'Save in this browser' +
+									(!isOpfsAvailable ? ' (not available)' : ''),
+								value: 'opfs',
+							},
+							{
+								label:
+									'Save to a local directory' +
+									(!localIsAvailable ? ' (not available)' : ''),
+								value: 'local-fs',
+							},
+						]}
+						onChange={(value) => chooseStorage(value as StorageOption)}
+						disabled={isSaving}
+					/>
+				</div>
 				{!isOpfsAvailable && selectedStorage === 'opfs' && (
 					<p style={helpTextStyle}>Not available in this browser</p>
 				)}

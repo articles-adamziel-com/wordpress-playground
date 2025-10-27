@@ -30,3 +30,13 @@
 .modal-buttons {
 	margin-top: 1.5rem;
 }
+
+/* Mobile fixes */
+@media (max-width: 600px) {
+	.modal :global(.components-modal__frame) {
+		max-height: calc(100vh - 120px) !important;
+		top: 50% !important;
+		transform: translateY(-50%) !important;
+		margin: 0 auto !important;
+	}
+}

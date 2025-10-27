@@ -1,0 +1,12 @@
+.storage-options :global(.components-radio-control__option) {
+	cursor: pointer;
+}
+
+.storage-options :global(.components-radio-control__option[data-unavailable="true"]) {
+	opacity: 0.5;
+	cursor: not-allowed;
+}
+
+.storage-options :global(.components-radio-control__option[data-unavailable="true"] input[type="radio"]) {
+	cursor: not-allowed;
+}
