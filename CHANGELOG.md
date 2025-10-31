@@ -4,6 +4,31 @@ All notable changes to this project are documented in this file by a CI job
 that runs on every NPM release. The file follows the [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 format.
 
+## [v3.0.17] (2025-10-31) 
+
+### PHP WebAssembly
+
+- Remove old, unused php-wasm .wasm files. ([#2846](https://github.com/WordPress/wordpress-playground/pull/2846))
+
+### Website
+
+- Remove client package from the list of offline mode assets. ([#2841](https://github.com/WordPress/wordpress-playground/pull/2841))
+
+### Bug Fixes
+
+- [CLI] Fix temp dir cleanup when Playground CLI server is killed. ([#2836](https://github.com/WordPress/wordpress-playground/pull/2836))
+
+### Various
+
+- Translate contributor-badge page to bangla. ([#2843](https://github.com/WordPress/wordpress-playground/pull/2843))
+
+### Contributors
+
+The following contributors merged PRs in this release:
+
+@bgrgicak @brandonpayton @noruzzamans
+
+
 ## [v3.0.16] (2025-10-31) 
 
 ### Enhancements
