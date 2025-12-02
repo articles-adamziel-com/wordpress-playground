@@ -176,6 +176,7 @@ const sidebars = {
 					items: [
 						'developers/architecture/wasm-php-overview',
 						'developers/architecture/wasm-php-compiling',
+						'developers/architecture/php-extensions',
 						'developers/architecture/wasm-php-javascript-module',
 						'developers/architecture/wasm-php-filesystem',
 						'developers/architecture/wasm-asyncify',
