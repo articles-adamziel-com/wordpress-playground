@@ -539,6 +539,7 @@ RUN cp -v /root/php-src/.libs/libphp*.la /root/lib/libphp.la
 RUN cp -v /root/php-src/.libs/libphp*.a /root/lib/libphp.a
 
 COPY ./php/php_wasm.c /root/
+COPY ./php/gethostbyname-node.c /root/
 COPY ./php/proc_open* /root/
 
 RUN if [[ "${PHP_VERSION:0:1}" -le "7" && "${PHP_VERSION:2:1}" -le "3" ]]; then \
@@ -554,10 +555,10 @@ ARG OUTPUT_DIR_ON_HOST
 ARG DEBUG_DWARF_COMPILATION_DIR
 ARG WITH_DEBUG
 RUN set -euxo pipefail; \
-	if [ "$EMSCRIPTEN_ENVIRONMENT" = "node" ]; then \
-		# Add nodefs when building for node.js
-		echo -n ' -lnodefs.js ' >> /root/.emcc-php-wasm-flags; \
-	fi; \
+        if [ "$EMSCRIPTEN_ENVIRONMENT" = "node" ]; then \
+                # Add nodefs when building for node.js
+                echo -n ' -lnodefs.js -DPHP_WASM_USE_NODE_DNS ' >> /root/.emcc-php-wasm-flags; \
+        fi; \
 	if [ "${WITH_SOURCEMAPS}" = "yes" ] || [ "${WITH_DEBUG}" = "yes" ]; then \
 		echo -n ' -g3 ' >> /root/.emcc-php-wasm-flags; \
 		# Make source file paths relative to the location of the .wasm file
@@ -2198,13 +2199,14 @@ RUN set -euxo pipefail; \
 	-s INVOKE_RUN=0 \
 	-o /build/output/php.js \
 	-s EXIT_RUNTIME=1 \
-	-Wl,--wrap=select \
-	-Wl,--wrap=usleep \
-		/root/lib/libphp.a \
-		/root/proc_open.c \
-		/root/php_wasm.c \
-		$(cat /root/.emcc-php-wasm-sources) \
-	-s ENVIRONMENT=$EMSCRIPTEN_ENVIRONMENT \
+        -Wl,--wrap=select \
+        -Wl,--wrap=usleep \
+                /root/lib/libphp.a \
+                /root/proc_open.c \
+                /root/php_wasm.c \
+                /root/gethostbyname-node.c \
+                $(cat /root/.emcc-php-wasm-sources) \
+        -s ENVIRONMENT=$EMSCRIPTEN_ENVIRONMENT \
 	-s FORCE_FILESYSTEM=1 \
 	-s EXPORT_NAME="'PHPLoader'"
 	# Emscripten complains it can't find some Asyncify functions
