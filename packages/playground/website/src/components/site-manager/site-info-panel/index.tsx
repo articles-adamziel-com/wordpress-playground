@@ -18,6 +18,7 @@ import { usePlaygroundClientInfo } from '../../../lib/use-playground-client';
 import { OfflineNotice } from '../../offline-notice';
 import { DownloadAsZipMenuItem } from '../../toolbar-buttons/download-as-zip';
 import { GithubExportMenuItem } from '../../toolbar-buttons/github-export-menu-item';
+import { GitLabExportMenuItem } from '../../toolbar-buttons/gitlab-export-menu-item';
 import { ReportError } from '../../toolbar-buttons/report-error';
 import { TemporarySiteNotice } from '../temporary-site-notice';
 import type { SiteInfo } from '../../../lib/state/redux/slice-sites';
@@ -345,6 +346,12 @@ export function SiteInfoPanel({
 										)}
 										<MenuGroup>
 											<GithubExportMenuItem
+												onClose={onClose}
+												disabled={
+													offline || !playground
+												}
+											/>
+											<GitLabExportMenuItem
 												onClose={onClose}
 												disabled={
 													offline || !playground

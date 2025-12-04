@@ -1,0 +1,61 @@
+.gitlab-button {
+	padding: 10px 20px;
+	background-color: #fc6d26;
+	color: #fff;
+	border: none;
+	border-radius: 6px;
+	font-size: 16px;
+	font-weight: 600;
+	cursor: pointer;
+	transition: background-color 0.3s ease;
+	text-decoration: none;
+	display: flex;
+	gap: 10px;
+	align-items: center;
+	justify-content: center;
+}
+
+.gitlab-button:hover {
+	background-color: #e24329;
+}
+
+.gitlab-button.disabled {
+	cursor: default;
+	opacity: 0.5;
+}
+
+.token-input {
+	width: 100%;
+	padding: 8px 12px;
+	border: 1px solid #ccc;
+	border-radius: 4px;
+	font-size: 14px;
+	margin-top: 8px;
+	margin-bottom: 16px;
+}
+
+.base-url-input {
+	width: 100%;
+	padding: 8px 12px;
+	border: 1px solid #ccc;
+	border-radius: 4px;
+	font-size: 14px;
+	margin-top: 8px;
+	margin-bottom: 16px;
+}
+
+.form-group {
+	margin-bottom: 16px;
+}
+
+.form-group label {
+	display: block;
+	font-weight: 600;
+	margin-bottom: 4px;
+}
+
+.help-text {
+	font-size: 12px;
+	color: #666;
+	margin-top: 4px;
+}

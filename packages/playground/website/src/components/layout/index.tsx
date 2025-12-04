@@ -17,6 +17,9 @@ import { asPullRequestAction } from '../../github/github-export-form/form';
 import { GithubImportModal } from '../../github/github-import-form';
 import { GitHubOAuthGuardModal } from '../../github/github-oauth-guard';
 import { asContentType } from '../../github/import-from-github';
+import { GitLabExportModal } from '../../gitlab/gitlab-export-form';
+import type { ExportFormValues as GitLabExportFormValues } from '../../gitlab/gitlab-export-form/form';
+import { asMergeRequestAction } from '../../gitlab/gitlab-export-form/form';
 import { ErrorReportModal } from '../error-report-modal';
 import { LogModal } from '../log-modal';
 import { StartErrorModal } from '../start-error-modal';
@@ -41,6 +44,7 @@ export const modalSlugs = {
 	IMPORT_FORM: 'import-form',
 	GITHUB_IMPORT: 'github-import',
 	GITHUB_EXPORT: 'github-export',
+	GITLAB_EXPORT: 'gitlab-export',
 	PREVIEW_PR_WP: 'preview-pr-wordpress',
 	PREVIEW_PR_GUTENBERG: 'preview-pr-gutenberg',
 	MISSING_SITE_PROMPT: 'missing-site-prompt',
@@ -146,6 +150,48 @@ function Modals(blueprint: BlueprintV1Declaration) {
 		return values;
 	});
 
+	const [gitlabExportFiles, setGitlabExportFiles] = useState<any[]>();
+	const [gitlabExportValues, setGitlabExportValues] = useState<
+		Partial<GitLabExportFormValues>
+	>(() => {
+		const values: Partial<GitLabExportFormValues> = {};
+		if (query.get('glexport-repo-url')) {
+			values.repoUrl = query.get('glexport-repo-url')!;
+		}
+		if (query.get('glexport-content-type')) {
+			values.contentType = asContentType(
+				query.get('glexport-content-type')
+			);
+		}
+		if (query.get('glexport-mr-action')) {
+			values.mrAction = asMergeRequestAction(
+				query.get('glexport-mr-action')
+			);
+		}
+		if (query.get('glexport-mr-number')) {
+			values.mrNumber = query.get('glexport-mr-number')?.toString();
+		}
+		if (query.get('glexport-playground-root')) {
+			values.fromPlaygroundRoot = query.get('glexport-playground-root')!;
+		}
+		if (query.get('glexport-repo-root')) {
+			values.toPathInRepo = query.get('glexport-repo-root')!;
+		}
+		if (query.get('glexport-path')) {
+			values.relativeExportPaths = query.getAll('glexport-path');
+		}
+		if (query.get('glexport-commit-message')) {
+			values.commitMessage = query.get('glexport-commit-message')!;
+		}
+		if (query.get('glexport-plugin')) {
+			values.plugin = query.get('glexport-plugin')!;
+		}
+		if (query.get('glexport-theme')) {
+			values.theme = query.get('glexport-theme')!;
+		}
+		return values;
+	});
+
 	useEffect(() => {
 		addCrashListener(logger, (e) => {
 			const error = e as CustomEvent;
@@ -207,6 +253,20 @@ function Modals(blueprint: BlueprintV1Declaration) {
 				onExported={(prUrl, formValues) => {
 					setGithubExportValues(formValues);
 					setGithubExportFiles(undefined);
+				}}
+			/>
+		);
+	} else if (currentModal === modalSlugs.GITLAB_EXPORT) {
+		return (
+			<GitLabExportModal
+				allowZipExport={
+					(query.get('glexport-allow-include-zip') ?? 'yes') === 'yes'
+				}
+				initialValues={gitlabExportValues}
+				initialFilesBeforeChanges={gitlabExportFiles}
+				onExported={(mrUrl, formValues) => {
+					setGitlabExportValues(formValues);
+					setGitlabExportFiles(undefined);
 				}}
 			/>
 		);
