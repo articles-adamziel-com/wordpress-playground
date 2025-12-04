@@ -20,7 +20,12 @@ export const oAuthMiddleware = async (
 			client_id: CLIENT_ID!,
 			scope: 'public_repo',
 		};
-		if (query.has('redirect_uri')) {
+		// For popup flow, redirect to the oauth-callback.html page
+		if (query.get('popup') === '1') {
+			const host = req.headers.host || 'localhost';
+			const protocol = host.includes('localhost') ? 'http' : 'https';
+			params.redirect_uri = `${protocol}://${host}/oauth-callback.html`;
+		} else if (query.has('redirect_uri')) {
 			params.redirect_uri = query.get('redirect_uri')!;
 		}
 		const redirectQS = new URLSearchParams(params).toString();

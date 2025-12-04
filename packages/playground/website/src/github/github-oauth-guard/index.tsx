@@ -4,12 +4,8 @@ import { GitHubIcon } from '../github';
 import css from './style.module.css';
 import { useState } from 'react';
 import classNames from 'classnames';
-import { useActiveSite } from '../../lib/state/redux/store';
 import { Modal } from '../../components/modal';
-
-const OAUTH_FLOW_URL = 'oauth.php?redirect=1';
-const urlParams = new URLSearchParams(window.location.search);
-export const oauthCode = urlParams.get('code');
+import { openGitHubAuthPopup } from '../popup-auth';
 
 export function GitHubOAuthGuardModal({ children }: GitHubOAuthGuardProps) {
 	const [isModalOpen, setIsModalOpen] = useState(!oAuthState.value.token);
@@ -42,7 +38,6 @@ interface GitHubOAuthGuardProps {
 }
 export default function GitHubOAuthGuard({
 	children,
-	mayLoseProgress,
 }: GitHubOAuthGuardProps) {
 	if (oAuthState.value.isAuthorizing) {
 		return (
@@ -57,35 +52,23 @@ export default function GitHubOAuthGuard({
 		return <div>{children}</div>;
 	}
 
-	const urlParams = new URLSearchParams();
-	urlParams.set('redirect_uri', window.location.href);
-	const oauthUrl = `${OAUTH_FLOW_URL}&${urlParams.toString()}`;
-	return (
-		<Authenticate
-			authenticateUrl={oauthUrl}
-			mayLoseProgress={mayLoseProgress}
-		/>
-	);
+	return <Authenticate />;
 }
 
-interface AuthenticateProps {
-	authenticateUrl: string;
-	mayLoseProgress?: boolean;
-}
+function Authenticate() {
+	const [error, setError] = useState<string | null>(null);
 
-function Authenticate({
-	authenticateUrl,
-	mayLoseProgress = undefined,
-}: AuthenticateProps) {
-	const storage = useActiveSite()?.metadata?.storage;
+	const handleConnect = async () => {
+		setError(null);
+		try {
+			await openGitHubAuthPopup();
+		} catch (err) {
+			setError(
+				err instanceof Error ? err.message : 'Authentication failed'
+			);
+		}
+	};
 
-	if (mayLoseProgress === undefined) {
-		mayLoseProgress = storage === 'none';
-	}
-	const [exported, setExported] = useState(false);
-	const buttonClass = classNames(css.githubButton, {
-		[css.disabled]: mayLoseProgress && !exported,
-	});
 	return (
 		<div>
 			<p>
@@ -96,39 +79,21 @@ function Authenticate({
 				To enable this feature, connect your GitHub account with
 				WordPress Playground.
 			</p>
-			{mayLoseProgress ? (
-				<>
-					<p>
-						<b>You will lose your progress.</b> Your Playground is
-						temporary and the authentication flow will redirect you
-						to GitHub and erase all your changes. Be sure to export
-						your Playground to a zip file before proceeding.
-					</p>
-					<label style={{ cursor: 'pointer' }}>
-						<input
-							type="checkbox"
-							checked={exported}
-							onChange={() => setExported(!exported)}
-						/>
-						I understand, and I have exported my Playground as a zip
-						if needed.
-					</label>
-				</>
-			) : null}
+			{error && (
+				<p className={css.error}>
+					{error}
+				</p>
+			)}
 			<p>
-				<a
+				<button
 					aria-label="Connect your GitHub account"
-					className={buttonClass}
-					href={authenticateUrl}
-					onClick={(e) => {
-						if (mayLoseProgress && !exported) {
-							e.preventDefault();
-						}
-					}}
+					className={classNames(css.githubButton)}
+					onClick={handleConnect}
+					type="button"
 				>
 					<Icon icon={GitHubIcon} />
 					Connect your GitHub account
-				</a>
+				</button>
 			</p>
 			<p>
 				Your access token is not stored anywhere, which means you'll

@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GitHub Authorization</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+            background-color: #f6f8fa;
+        }
+        .container {
+            text-align: center;
+            padding: 40px;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.12);
+        }
+        .spinner {
+            width: 40px;
+            height: 40px;
+            border: 3px solid #e1e4e8;
+            border-top-color: #0366d6;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 16px;
+        }
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        .error {
+            color: #cb2431;
+        }
+        .success {
+            color: #28a745;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="spinner" id="spinner"></div>
+        <p id="message">Completing authorization...</p>
+    </div>
+    <script>
+        (async function() {
+            const messageEl = document.getElementById('message');
+            const spinnerEl = document.getElementById('spinner');
+
+            function showError(error) {
+                spinnerEl.style.display = 'none';
+                messageEl.className = 'error';
+                messageEl.textContent = error;
+            }
+
+            function showSuccess() {
+                spinnerEl.style.display = 'none';
+                messageEl.className = 'success';
+                messageEl.textContent = 'Authorization successful! This window will close automatically.';
+            }
+
+            try {
+                const urlParams = new URLSearchParams(window.location.search);
+                const code = urlParams.get('code');
+                const error = urlParams.get('error');
+                const errorDescription = urlParams.get('error_description');
+
+                if (error) {
+                    throw new Error(errorDescription || error);
+                }
+
+                if (!code) {
+                    throw new Error('No authorization code received');
+                }
+
+                // Exchange the code for an access token
+                const response = await fetch('/oauth.php?code=' + encodeURIComponent(code), {
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json',
+                    },
+                });
+
+                const data = await response.json();
+
+                if (data.error) {
+                    throw new Error(data.error_description || data.error);
+                }
+
+                if (!data.access_token) {
+                    throw new Error('No access token received');
+                }
+
+                // Send the token to the opener window
+                if (window.opener) {
+                    window.opener.postMessage({
+                        type: 'github-oauth-success',
+                        token: data.access_token,
+                    }, window.location.origin);
+
+                    showSuccess();
+
+                    // Close the popup after a short delay
+                    setTimeout(() => {
+                        window.close();
+                    }, 1000);
+                } else {
+                    throw new Error('This page must be opened as a popup');
+                }
+            } catch (err) {
+                showError(err.message || 'Authorization failed');
+
+                // Notify the opener about the error
+                if (window.opener) {
+                    window.opener.postMessage({
+                        type: 'github-oauth-error',
+                        error: err.message,
+                    }, window.location.origin);
+                }
+            }
+        })();
+    </script>
+</body>
+</html>

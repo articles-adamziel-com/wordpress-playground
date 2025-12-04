@@ -1,5 +1,8 @@
 import { setOAuthToken, oAuthState } from './state';
-import { oauthCode } from './github-oauth-guard';
+
+// Check for OAuth code in URL (for backwards compatibility with redirect flow)
+const urlParams = new URLSearchParams(window.location.search);
+const oauthCode = urlParams.get('code');
 
 export async function acquireOAuthTokenIfNeeded() {
 	if (!oauthCode) {
