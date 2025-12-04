@@ -46,6 +46,7 @@ import { fetchWithCorsProxy } from './fetch-with-cors-proxy';
 import { ChunkedDecoderStream } from './chunked-decoder';
 import type { EmscriptenOptions } from '@php-wasm/universal';
 import { concatUint8Arrays } from '@php-wasm/util';
+import { MockSMTPServer, isSMTPPort } from './smtp/mock-smtp-server';
 
 export type TCPOverFetchOptions = {
 	CAroot: GeneratedCertificate;
@@ -274,6 +275,14 @@ export class TCPOverFetchWebsocket {
 				this.fetchOverHTTP();
 				this.fetchInitiated = true;
 				break;
+			case 'smtp':
+				this.handleSMTP();
+				this.fetchInitiated = true;
+				break;
+			case 'smtp-tls':
+				this.handleSMTPOverTLS();
+				this.fetchInitiated = true;
+				break;
 		}
 	}
 
@@ -364,6 +373,92 @@ export class TCPOverFetchWebsocket {
 		}
 	}
 
+	/**
+	 * Handle plaintext SMTP connections (ports 25, 587).
+	 * Creates a mock SMTP server that captures outgoing emails.
+	 */
+	async handleSMTP() {
+		const smtpServer = new MockSMTPServer();
+
+		// Connect this WebSocket's client end to the SMTP server.
+		// Forward the data from PHP to the mock SMTP server.
+		this.clientUpstream.readable
+			.pipeTo(smtpServer.clientUpstream.writable)
+			.catch(() => {
+				// Ignore failures arising from pipeTo() errors.
+			});
+
+		// Forward the SMTP responses back to PHP.
+		smtpServer.clientDownstream.readable
+			.pipeTo(this.clientDownstream.writable)
+			.catch(() => {
+				// Ignore failures arising from pipeTo() errors.
+			});
+	}
+
+	/**
+	 * Handle SMTPS (implicit TLS) connections on port 465.
+	 * Performs TLS handshake first, then routes to mock SMTP server.
+	 */
+	async handleSMTPOverTLS() {
+		if (!this.CAroot) {
+			throw new Error(
+				'TLS protocol is only supported when the TCPOverFetchWebsocket is ' +
+					'instantiated with a CAroot'
+			);
+		}
+		const siteCert = await generateCertificate(
+			{
+				subject: {
+					commonName: this.host,
+					organizationName: this.host,
+					countryName: 'US',
+				},
+				issuer: this.CAroot.tbsDescription.subject,
+			},
+			this.CAroot.keyPair
+		);
+
+		const tlsConnection = new TLS_1_2_Connection();
+
+		// Connect this WebSocket's client end to the TLS connection.
+		// Forward the encrypted bytes from the WebSocket to the TLS connection.
+		this.clientUpstream.readable
+			.pipeTo(tlsConnection.clientEnd.upstream.writable)
+			.catch(() => {
+				// Ignore failures arising from pipeTo() errors.
+			});
+
+		// Forward the encrypted bytes from the TLS connection to this WebSocket.
+		tlsConnection.clientEnd.downstream.readable
+			.pipeTo(this.clientDownstream.writable)
+			.catch(() => {
+				// Ignore failures arising from pipeTo() errors.
+			});
+
+		// Perform the TLS handshake
+		await tlsConnection.TLSHandshake(siteCert.keyPair.privateKey, [
+			siteCert.certificate,
+			this.CAroot.certificate,
+		]);
+
+		// Create mock SMTP server for the decrypted traffic
+		const smtpServer = new MockSMTPServer();
+
+		// Connect the TLS server end to the mock SMTP server
+		tlsConnection.serverEnd.upstream.readable
+			.pipeTo(smtpServer.clientUpstream.writable)
+			.catch(() => {
+				// Ignore failures
+			});
+
+		smtpServer.clientDownstream.readable
+			.pipeTo(tlsConnection.serverEnd.downstream.writable)
+			.catch(() => {
+				// Ignore failures
+			});
+	}
+
 	close() {
 		/**
 		 * Workaround a PHP.wasm issue – if the WebSocket is
@@ -402,6 +497,19 @@ function guessProtocol(port: number, data: Uint8Array) {
 		return false;
 	}
 
+	// Check for SMTPS (implicit TLS on port 465)
+	// Must check this before general TLS detection
+	if (port === 465) {
+		const looksLikeTls =
+			data[0] === ContentTypes.Handshake &&
+			data[1] === 0x03 &&
+			data[2] >= 0x01 &&
+			data[2] <= 0x03;
+		if (looksLikeTls) {
+			return 'smtp-tls';
+		}
+	}
+
 	// Assume TLS if we're on the usual HTTPS port and the
 	// first three bytes look like a TLS handshake record.
 	const looksLikeTls =
@@ -413,6 +521,20 @@ function guessProtocol(port: number, data: Uint8Array) {
 		data[2] <= 0x03;
 	if (looksLikeTls) {
 		return 'tls';
+	}
+
+	// Check for plaintext SMTP on standard SMTP ports (25, 587)
+	// SMTP clients typically start with EHLO or HELO
+	if (isSMTPPort(port) && port !== 465) {
+		const decodedFirstLine = new TextDecoder('latin1', {
+			fatal: true,
+		}).decode(data);
+		const upperLine = decodedFirstLine.toUpperCase();
+		const looksLikeSMTP =
+			upperLine.startsWith('EHLO ') || upperLine.startsWith('HELO ');
+		if (looksLikeSMTP) {
+			return 'smtp';
+		}
 	}
 
 	// Assume HTTP if we're on the usual HTTP port and the

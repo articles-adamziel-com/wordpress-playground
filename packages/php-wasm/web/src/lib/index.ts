@@ -14,6 +14,7 @@ export type {
 } from './directory-handle-mount';
 
 export * from './tls/certificates';
+export * from './smtp';
 export type { TCPOverFetchOptions } from './tcp-over-fetch-websocket';
 export { fetchWithCorsProxy } from './fetch-with-cors-proxy';
 export {
