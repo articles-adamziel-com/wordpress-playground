@@ -33,6 +33,7 @@ import { WordPressPRMenuItem } from '../../toolbar-buttons/wordpress-pr-menu-ite
 import { GutenbergPRMenuItem } from '../../toolbar-buttons/gutenberg-pr-menu-item';
 import { RestoreFromZipMenuItem } from '../../toolbar-buttons/restore-from-zip';
 import { GithubImportMenuItem } from '../../toolbar-buttons/github-import-menu-item';
+import { RecoverBackupMenuItem } from '../../toolbar-buttons/recover-backup-menu-item';
 
 export function Sidebar({
 	className,
@@ -150,6 +151,7 @@ export function Sidebar({
 								onClose={onClose}
 								disabled={false}
 							/>
+							<RecoverBackupMenuItem onClose={onClose} />
 						</>
 					)}
 				</DropdownMenu>

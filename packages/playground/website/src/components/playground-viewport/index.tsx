@@ -19,6 +19,7 @@ import {
 	selectTemporarySites,
 } from '../../lib/state/redux/slice-sites';
 import classNames from 'classnames';
+import { useAutoBackupTemporarySite } from '../../lib/hooks/use-auto-backup-temporary-site';
 
 export const supportedDisplayModes = [
 	'browser-full-screen',
@@ -174,6 +175,11 @@ export const JustViewport = function JustViewport({
 }) {
 	const iframeRef = useRef<HTMLIFrameElement>(null);
 	const site = useAppSelector((state) => selectSiteBySlug(state, siteSlug))!;
+
+	// Auto-backup temporary sites to OPFS for data loss prevention
+	useAutoBackupTemporarySite(
+		site?.metadata.storage === 'none' ? siteSlug : undefined
+	);
 
 	const dispatch = useAppDispatch();
 	const runtimeConfigString = JSON.stringify(

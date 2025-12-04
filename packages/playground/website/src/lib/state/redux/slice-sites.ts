@@ -30,6 +30,11 @@ export interface SiteInfo {
 		searchParams?: Record<string, string>;
 		hash?: string;
 	};
+	/**
+	 * If set, the site should be restored from this backup ID.
+	 * The backup files will be loaded from OPFS on boot.
+	 */
+	restoreFromBackupId?: string;
 	metadata: SiteMetadata;
 }
 
@@ -323,6 +328,54 @@ export function setTemporarySiteSpec(
 				)!,
 			},
 		};
+		dispatch(sitesSlice.actions.addSite(newSiteInfo));
+		dispatch(sitesSlice.actions.setFirstTemporarySiteCreated());
+		return newSiteInfo;
+	};
+}
+
+/**
+ * Creates a temporary site from a backup.
+ * The site will be restored from the backup's OPFS directory on boot.
+ */
+export function setTemporarySiteSpecFromBackup(
+	siteName: string,
+	playgroundUrl: URL,
+	backupId: string,
+	backupMetadata: SiteMetadata
+) {
+	return async (
+		dispatch: PlaygroundDispatch,
+		getState: () => PlaygroundReduxState
+	) => {
+		const sites = getState().sites.entities;
+
+		// First, delete any existing temporary sites
+		for (const site of Object.values(sites)) {
+			if (site.metadata.storage === 'none') {
+				dispatch(sitesSlice.actions.removeSite(site.slug));
+			}
+		}
+
+		// Create a new temporary site with the backup's metadata
+		const newSiteInfo: SiteInfo = {
+			slug: deriveSlugFromSiteName(siteName),
+			originalUrlParams: {
+				searchParams: parseSearchParams(playgroundUrl.searchParams),
+				hash: playgroundUrl.hash,
+			},
+			restoreFromBackupId: backupId,
+			metadata: {
+				name: siteName,
+				id: crypto.randomUUID(),
+				whenCreated: Date.now(),
+				storage: 'none' as const,
+				originalBlueprint: backupMetadata.originalBlueprint,
+				originalBlueprintSource: backupMetadata.originalBlueprintSource,
+				runtimeConfiguration: backupMetadata.runtimeConfiguration,
+			},
+		};
+
 		dispatch(sitesSlice.actions.addSite(newSiteInfo));
 		dispatch(sitesSlice.actions.setFirstTemporarySiteCreated());
 		return newSiteInfo;
