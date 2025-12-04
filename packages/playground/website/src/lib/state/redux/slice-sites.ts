@@ -30,11 +30,6 @@ export interface SiteInfo {
 		searchParams?: Record<string, string>;
 		hash?: string;
 	};
-	/**
-	 * If set, the site should be restored from this backup ID.
-	 * The backup files will be loaded from OPFS on boot.
-	 */
-	restoreFromBackupId?: string;
 	metadata: SiteMetadata;
 }
 
@@ -334,54 +329,6 @@ export function setTemporarySiteSpec(
 	};
 }
 
-/**
- * Creates a temporary site from a backup.
- * The site will be restored from the backup's OPFS directory on boot.
- */
-export function setTemporarySiteSpecFromBackup(
-	siteName: string,
-	playgroundUrl: URL,
-	backupId: string,
-	backupMetadata: SiteMetadata
-) {
-	return async (
-		dispatch: PlaygroundDispatch,
-		getState: () => PlaygroundReduxState
-	) => {
-		const sites = getState().sites.entities;
-
-		// First, delete any existing temporary sites
-		for (const site of Object.values(sites)) {
-			if (site.metadata.storage === 'none') {
-				dispatch(sitesSlice.actions.removeSite(site.slug));
-			}
-		}
-
-		// Create a new temporary site with the backup's metadata
-		const newSiteInfo: SiteInfo = {
-			slug: deriveSlugFromSiteName(siteName),
-			originalUrlParams: {
-				searchParams: parseSearchParams(playgroundUrl.searchParams),
-				hash: playgroundUrl.hash,
-			},
-			restoreFromBackupId: backupId,
-			metadata: {
-				name: siteName,
-				id: crypto.randomUUID(),
-				whenCreated: Date.now(),
-				storage: 'none' as const,
-				originalBlueprint: backupMetadata.originalBlueprint,
-				originalBlueprintSource: backupMetadata.originalBlueprintSource,
-				runtimeConfiguration: backupMetadata.runtimeConfiguration,
-			},
-		};
-
-		dispatch(sitesSlice.actions.addSite(newSiteInfo));
-		dispatch(sitesSlice.actions.setFirstTemporarySiteCreated());
-		return newSiteInfo;
-	};
-}
-
 function parseSearchParams(searchParams: URLSearchParams) {
 	const params: Record<string, any> = {};
 	for (const key of searchParams.keys()) {
@@ -420,6 +367,13 @@ export interface SiteMetadata {
 	id: string;
 	name: string;
 	logo?: SiteLogo;
+
+	/**
+	 * If true, this site was automatically saved for data loss prevention.
+	 * Auto-saved sites are created from temporary playgrounds and can be
+	 * recovered if the user accidentally closes or refreshes the page.
+	 */
+	isAutoSave?: boolean;
 
 	// TODO: The designs show keeping admin username and password. Why do we want that?
 	whenCreated?: number;
@@ -464,6 +418,26 @@ export const selectTemporarySites = createSelector(
 	[selectAllSites],
 	(sites: SiteInfo[]) => {
 		return sites.filter((site) => site.metadata.storage === 'none');
+	}
+);
+
+/**
+ * Select all auto-saved sites (sites saved automatically for data loss prevention).
+ * These are sorted by creation time, newest first.
+ */
+export const selectAutoSavedSites = createSelector(
+	[selectAllSites],
+	(sites: SiteInfo[]) => {
+		return sites
+			.filter(
+				(site) =>
+					site.metadata.isAutoSave && site.metadata.storage === 'opfs'
+			)
+			.sort(
+				(a, b) =>
+					(b.metadata.whenCreated || 0) -
+					(a.metadata.whenCreated || 0)
+			);
 	}
 );
 

@@ -5,7 +5,6 @@ import {
 	OPFSSitesLoaded,
 	selectSiteBySlug,
 	setTemporarySiteSpec,
-	setTemporarySiteSpecFromBackup,
 	deriveSiteNameFromSlug,
 } from '../../lib/state/redux/slice-sites';
 import {
@@ -21,7 +20,6 @@ import { modalSlugs } from '../layout';
 import { setActiveModal } from '../../lib/state/redux/slice-ui';
 import { selectClientBySiteSlug } from '../../lib/state/redux/slice-clients';
 import { randomSiteName } from '../../lib/state/redux/random-site-name';
-import { opfsTempBackupStorage } from '../../lib/state/opfs/opfs-temp-backup-storage';
 
 /**
  * Ensures the redux store always has an activeSite value.
@@ -156,39 +154,6 @@ async function createNewTemporarySite(
 	dispatch: ReturnType<typeof useAppDispatch>,
 	requestedSiteSlug?: string
 ) {
-	const url = new URL(window.location.href);
-	const restoreBackupId = url.searchParams.get('restore-backup');
-
-	// Check if we're restoring from a backup
-	if (restoreBackupId) {
-		try {
-			const backup = await opfsTempBackupStorage.read(restoreBackupId);
-			if (backup) {
-				// Remove the restore-backup parameter to avoid infinite loop
-				url.searchParams.delete('restore-backup');
-				window.history.replaceState({}, '', url.toString());
-
-				// Create a site from the backup
-				const siteName = backup.metadata.name || randomSiteName();
-				const newSiteInfo = await dispatch(
-					setTemporarySiteSpecFromBackup(
-						siteName,
-						url,
-						restoreBackupId,
-						backup.metadata.siteMetadata
-					)
-				);
-				await dispatch(setActiveSite(newSiteInfo.slug));
-				return;
-			}
-		} catch (e) {
-			logger.error('Failed to restore from backup:', e);
-		}
-		// If backup restoration fails, fall through to create a new temp site
-		url.searchParams.delete('restore-backup');
-		window.history.replaceState({}, '', url.toString());
-	}
-
 	// If the site slug is missing, create a new temporary site.
 	const siteName = requestedSiteSlug
 		? deriveSiteNameFromSlug(requestedSiteSlug)

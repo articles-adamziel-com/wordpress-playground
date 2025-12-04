@@ -1,109 +1,61 @@
-import { useState, useEffect } from 'react';
-import { Button, Spinner } from '@wordpress/components';
+import { Button } from '@wordpress/components';
 import { Modal } from '../modal';
 import ModalButtons from '../modal/modal-buttons';
-import { useAppDispatch } from '../../lib/state/redux/store';
+import {
+	useAppDispatch,
+	useAppSelector,
+	setActiveSite,
+} from '../../lib/state/redux/store';
 import { setActiveModal } from '../../lib/state/redux/slice-ui';
 import {
-	opfsTempBackupStorage,
-	type TempBackupInfo,
-} from '../../lib/state/opfs/opfs-temp-backup-storage';
+	selectAutoSavedSites,
+	removeSite,
+	type SiteInfo,
+} from '../../lib/state/redux/slice-sites';
+import { opfsSiteStorage } from '../../lib/state/opfs/opfs-site-storage';
 import { logger } from '@php-wasm/logger';
+import { useState } from 'react';
+import { PlaygroundRoute, redirectTo } from '../../lib/state/url/router';
 import css from './style.module.css';
-
-type RestoreStatus = 'idle' | 'restoring' | 'success' | 'error';
 
 export function RecoverBackupModal() {
 	const dispatch = useAppDispatch();
-	const [backups, setBackups] = useState<TempBackupInfo[]>([]);
-	const [loading, setLoading] = useState(true);
-	const [selectedBackupId, setSelectedBackupId] = useState<string | null>(
-		null
+	const autoSavedSites = useAppSelector(selectAutoSavedSites);
+	const [selectedSiteSlug, setSelectedSiteSlug] = useState<string | null>(
+		autoSavedSites.length > 0 ? autoSavedSites[0].slug : null
 	);
-	const [restoreStatus, setRestoreStatus] = useState<RestoreStatus>('idle');
-	const [error, setError] = useState<string | null>(null);
-
-	useEffect(() => {
-		loadBackups();
-	}, []);
-
-	const loadBackups = async () => {
-		try {
-			setLoading(true);
-			const available = await opfsTempBackupStorage.isAvailable();
-			if (!available) {
-				setBackups([]);
-				return;
-			}
-			const list = await opfsTempBackupStorage.list();
-			setBackups(list);
-			// Auto-select the first backup if available
-			if (list.length > 0 && !selectedBackupId) {
-				setSelectedBackupId(list[0].id);
-			}
-		} catch (e) {
-			logger.error('Failed to load backups:', e);
-			setError('Failed to load backups');
-		} finally {
-			setLoading(false);
-		}
-	};
 
 	const closeModal = () => {
 		dispatch(setActiveModal(null));
 	};
 
-	const handleRestore = async () => {
-		if (!selectedBackupId) return;
+	const handleRestore = () => {
+		if (!selectedSiteSlug) return;
 
-		const backup = backups.find((b) => b.id === selectedBackupId);
-		if (!backup) return;
+		const site = autoSavedSites.find((s) => s.slug === selectedSiteSlug);
+		if (!site) return;
 
-		try {
-			setRestoreStatus('restoring');
-			setError(null);
-
-			// Build URL with the original parameters from the backup
-			const url = new URL(window.location.origin);
-
-			// Add original URL parameters if they exist
-			if (backup.metadata.originalUrlParams?.searchParams) {
-				for (const [key, value] of Object.entries(
-					backup.metadata.originalUrlParams.searchParams
-				)) {
-					if (Array.isArray(value)) {
-						for (const v of value) {
-							url.searchParams.append(key, v);
-						}
-					} else {
-						url.searchParams.set(key, value);
-					}
-				}
-			}
-			if (backup.metadata.originalUrlParams?.hash) {
-				url.hash = backup.metadata.originalUrlParams.hash;
-			}
-
-			// Add a special parameter to indicate we should restore from backup
-			url.searchParams.set('restore-backup', backup.id);
-
-			setRestoreStatus('success');
-
-			// Redirect to the URL which will restore the backup
-			window.location.href = url.toString();
-		} catch (e) {
-			logger.error('Failed to restore backup:', e);
-			setError('Failed to restore backup. Please try again.');
-			setRestoreStatus('error');
-		}
+		// Navigate to the auto-saved site
+		dispatch(setActiveSite(site.slug));
+		redirectTo(PlaygroundRoute.site(site));
+		closeModal();
 	};
 
-	const handleDelete = async (backupId: string) => {
+	const handleDelete = async (site: SiteInfo) => {
 		try {
-			await opfsTempBackupStorage.delete(backupId);
-			await loadBackups();
-			if (selectedBackupId === backupId) {
-				setSelectedBackupId(backups.length > 1 ? backups[0].id : null);
+			// Remove from Redux state
+			dispatch(removeSite(site.slug));
+			// Remove from OPFS
+			await opfsSiteStorage?.delete(site.slug);
+
+			// Update selection if needed
+			if (selectedSiteSlug === site.slug) {
+				const remaining = autoSavedSites.filter(
+					(s) => s.slug !== site.slug
+				);
+				setSelectedSiteSlug(
+					remaining.length > 0 ? remaining[0].slug : null
+				);
 			}
 		} catch (e) {
 			logger.error('Failed to delete backup:', e);
@@ -140,23 +92,15 @@ export function RecoverBackupModal() {
 		}
 	};
 
-	const isRestoring = restoreStatus === 'restoring';
-
 	return (
 		<Modal
 			title="Recover from Backup"
 			contentLabel="Recover from Backup"
 			onRequestClose={closeModal}
-			isDismissible={!isRestoring}
 			small
 		>
 			<div className={css.container}>
-				{loading ? (
-					<div className={css.loadingContainer}>
-						<Spinner />
-						<p>Loading backups...</p>
-					</div>
-				) : backups.length === 0 ? (
+				{autoSavedSites.length === 0 ? (
 					<div className={css.emptyState}>
 						<p>No backups available.</p>
 						<p className={css.helpText}>
@@ -168,20 +112,21 @@ export function RecoverBackupModal() {
 				) : (
 					<>
 						<p className={css.description}>
-							Select a backup to restore. This will create a new
-							temporary playground with the saved content.
+							Select a backup to open. Auto-saved playgrounds are
+							stored like regular playgrounds and can be accessed
+							from the sidebar.
 						</p>
 						<div className={css.backupList}>
-							{backups.map((backup) => (
+							{autoSavedSites.map((site) => (
 								<div
-									key={backup.id}
+									key={site.slug}
 									className={`${css.backupItem} ${
-										selectedBackupId === backup.id
+										selectedSiteSlug === site.slug
 											? css.backupItemSelected
 											: ''
 									}`}
 									onClick={() =>
-										setSelectedBackupId(backup.id)
+										setSelectedSiteSlug(site.slug)
 									}
 									role="button"
 									tabIndex={0}
@@ -190,17 +135,17 @@ export function RecoverBackupModal() {
 											e.key === 'Enter' ||
 											e.key === ' '
 										) {
-											setSelectedBackupId(backup.id);
+											setSelectedSiteSlug(site.slug);
 										}
 									}}
 								>
 									<div className={css.backupInfo}>
 										<span className={css.backupName}>
-											{backup.metadata.name}
+											{site.metadata.name}
 										</span>
 										<span className={css.backupDate}>
 											{formatDate(
-												backup.metadata.whenCreated
+												site.metadata.whenCreated || 0
 											)}
 										</span>
 									</div>
@@ -209,9 +154,8 @@ export function RecoverBackupModal() {
 										isDestructive
 										onClick={(e) => {
 											e.stopPropagation();
-											handleDelete(backup.id);
+											handleDelete(site);
 										}}
-										disabled={isRestoring}
 										className={css.deleteButton}
 									>
 										Delete
@@ -222,13 +166,11 @@ export function RecoverBackupModal() {
 					</>
 				)}
 
-				{error && <p className={css.errorText}>{error}</p>}
-
 				<ModalButtons
-					submitText={isRestoring ? 'Restoring...' : 'Restore'}
+					submitText="Open"
 					onCancel={closeModal}
-					areDisabled={!selectedBackupId || isRestoring || loading}
-					areBusy={isRestoring}
+					areDisabled={!selectedSiteSlug}
+					areBusy={false}
 					onSubmit={handleRestore}
 					style={{ marginTop: 16 }}
 				/>

@@ -26,6 +26,7 @@ import type { SiteLogo } from '../../../lib/state/redux/slice-sites';
 import {
 	selectSortedSites,
 	selectTemporarySite,
+	selectAutoSavedSites,
 } from '../../../lib/state/redux/slice-sites';
 import { PlaygroundRoute, redirectTo } from '../../../lib/state/url/router';
 import { setSiteManagerSection } from '../../../lib/state/redux/slice-ui';
@@ -46,8 +47,9 @@ export function Sidebar({
 }) {
 	const offline = useAppSelector((state) => state.ui.offline);
 	const storedSites = useAppSelector(selectSortedSites).filter(
-		(site) => site.metadata.storage !== 'none'
+		(site) => site.metadata.storage !== 'none' && !site.metadata.isAutoSave
 	);
+	const autoSavedSites = useAppSelector(selectAutoSavedSites);
 	const temporarySite = useAppSelector(selectTemporarySite);
 	const activeSite = useActiveSite();
 	const dispatch = useAppDispatch();
@@ -305,6 +307,70 @@ export function Sidebar({
 														}
 													/>
 												)}
+											</Flex>
+											<FlexBlock
+												className={
+													css.sidebarItemSiteName
+												}
+											>
+												{site.metadata.name}
+											</FlexBlock>
+										</HStack>
+									</MenuItem>
+								);
+							})}
+						</MenuGroup>
+					</>
+				)}
+				{autoSavedSites.length > 0 && (
+					<>
+						<Heading
+							level="2"
+							className={classNames(
+								css.sidebarLabel,
+								css.sidebarListLabel
+							)}
+						>
+							Recoverable Playgrounds
+						</Heading>
+						<MenuGroup className={css.sidebarList}>
+							{autoSavedSites.map((site) => {
+								const isSelected =
+									site.slug === activeSite?.slug;
+								return (
+									<MenuItem
+										key={site.slug}
+										className={classNames(css.sidebarItem, {
+											[css.sidebarItemSelected]:
+												isSelected,
+										})}
+										onClick={() => onSiteClick(site.slug)}
+										isSelected={isSelected}
+										// eslint-disable-next-line jsx-a11y/aria-role
+										role=""
+										title={`Auto-saved ${new Date(site.metadata.whenCreated || 0).toLocaleString()}`}
+										{...(isSelected
+											? {
+													'aria-current': 'page',
+											  }
+											: {})}
+									>
+										<HStack
+											justify="flex-start"
+											alignment="center"
+										>
+											<Flex
+												style={{
+													width: 24,
+												}}
+												align="center"
+												justify="center"
+											>
+												<ClockIcon
+													className={
+														css.sidebarItemLogo
+													}
+												/>
 											</Flex>
 											<FlexBlock
 												className={

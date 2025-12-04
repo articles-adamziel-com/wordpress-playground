@@ -5,7 +5,6 @@ import {
 	legacyOpfsPathSymbol,
 	deleteDirectory,
 } from '../opfs/opfs-site-storage';
-import { opfsTempBackupStorage } from '../opfs/opfs-temp-backup-storage';
 import {
 	addClientInfo,
 	removeClientInfo,
@@ -40,23 +39,7 @@ export function bootSiteClient(
 		const site = selectSiteBySlug(getState(), siteSlug);
 
 		let mountDescriptor = undefined;
-		let isRestoringFromBackup = false;
-
-		// Check if we're restoring from a backup
-		if (site.restoreFromBackupId) {
-			const backupPath = opfsTempBackupStorage.getBackupDirectoryPath(
-				site.restoreFromBackupId
-			);
-			mountDescriptor = {
-				device: {
-					type: 'opfs',
-					path: backupPath,
-				},
-				mountpoint: '/wordpress',
-			} as const;
-			isRestoringFromBackup = true;
-			logger.info(`Restoring from backup: ${site.restoreFromBackupId}`);
-		} else if (site.metadata.storage === 'opfs') {
+		if (site.metadata.storage === 'opfs') {
 			mountDescriptor = {
 				device: {
 					type: 'opfs',
@@ -97,29 +80,16 @@ export function bootSiteClient(
 				);
 			} catch (e) {
 				logger.error(e);
-				if (isRestoringFromBackup) {
-					// If restoring from backup fails, just continue without backup
-					logger.warn(
-						`Failed to restore from backup ${site.restoreFromBackupId}, starting fresh`
-					);
-					mountDescriptor = undefined;
-				} else {
-					if (
-						e instanceof DOMException &&
-						e.name === 'NotFoundError'
-					) {
-						dispatch(
-							setActiveSiteError(
-								'directory-handle-not-found-in-indexeddb'
-							)
-						);
-						return;
-					}
+				if (e instanceof DOMException && e.name === 'NotFoundError') {
 					dispatch(
-						setActiveSiteError('directory-handle-unknown-error')
+						setActiveSiteError(
+							'directory-handle-not-found-in-indexeddb'
+						)
 					);
 					return;
 				}
+				dispatch(setActiveSiteError('directory-handle-unknown-error'));
+				return;
 			}
 		}
 

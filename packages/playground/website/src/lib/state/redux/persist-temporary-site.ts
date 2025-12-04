@@ -25,6 +25,16 @@ export function persistTemporarySite(
 		localFsHandle?: FileSystemDirectoryHandle;
 		siteName?: string;
 		skipRenameModal?: boolean;
+		/**
+		 * If true, marks this as an auto-saved site for data loss prevention.
+		 * Auto-saved sites are shown separately in the UI and can be recovered.
+		 */
+		isAutoSave?: boolean;
+		/**
+		 * If true, skips the redirect to the saved site URL.
+		 * Useful for auto-save where we want to keep the temporary playground active.
+		 */
+		skipRedirect?: boolean;
 	} = {}
 ) {
 	// @TODO: Handle errors
@@ -197,6 +207,7 @@ export function persistTemporarySite(
 						),
 					},
 					...(trimmedName ? { name: trimmedName } : {}),
+					...(options.isAutoSave ? { isAutoSave: true } : {}),
 				},
 			})
 		);
@@ -208,11 +219,13 @@ export function persistTemporarySite(
 		 * Comlink. We should make Comlink ignore those.
 		 */
 		// @TODO: ^ Is this fixed now?
-		const updatedState = getState();
-		const updatedSite = selectSiteBySlug(updatedState, siteSlug);
-		const persistentSiteUrl = PlaygroundRoute.site(updatedSite!);
-		redirectTo(persistentSiteUrl);
-		if (!options.skipRenameModal) {
+		if (!options.skipRedirect) {
+			const updatedState = getState();
+			const updatedSite = selectSiteBySlug(updatedState, siteSlug);
+			const persistentSiteUrl = PlaygroundRoute.site(updatedSite!);
+			redirectTo(persistentSiteUrl);
+		}
+		if (!options.skipRenameModal && !options.skipRedirect) {
 			dispatch(setActiveModal('rename-site'));
 		}
 	};
