@@ -12,8 +12,6 @@ on:
     paths:
       - 'packages/playground/fs-ext/**'
       - '.github/workflows/build-fs-ext-prebuilds.yml'
-    branches:
-      - trunk
 
 jobs:
   build:
