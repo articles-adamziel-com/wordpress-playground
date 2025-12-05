@@ -1,0 +1,47 @@
+{
+  "name": "@wp-playground/fs-ext",
+  "version": "0.0.1",
+  "description": "Prebuildified fs-ext with file locking support for WordPress Playground",
+  "main": "fs-ext.js",
+  "types": "fs-ext.d.ts",
+  "files": [
+    "fs-ext.js",
+    "fs-ext.d.ts",
+    "fs-ext.cc",
+    "binding.gyp",
+    "prebuilds"
+  ],
+  "scripts": {
+    "install": "node-gyp-build",
+    "prebuild": "prebuildify --napi=false --strip --tag-libc",
+    "prebuild:cross": "prebuildify-cross --napi=false --strip --tag-libc",
+    "build": "node-gyp rebuild",
+    "test": "node test.js"
+  },
+  "keywords": [
+    "fs",
+    "filesystem",
+    "flock",
+    "seek",
+    "prebuild"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/WordPress/wordpress-playground.git",
+    "directory": "packages/playground/fs-ext"
+  },
+  "engines": {
+    "node": ">= 18.0.0"
+  },
+  "dependencies": {
+    "node-gyp-build": "^4.8.0"
+  },
+  "devDependencies": {
+    "nan": "^2.21.0",
+    "node-gyp": "^10.0.0",
+    "prebuildify": "^6.0.0",
+    "prebuildify-cross": "^5.1.0"
+  },
+  "gypfile": true
+}

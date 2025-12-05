@@ -505,7 +505,7 @@ export async function runCLI(args: RunCLIArgs): Promise<RunCLIServer> {
 		os.platform() === 'win32'
 			? // @TODO: Enable fs-ext here when it works with Windows.
 			  undefined
-			: await import('fs-ext')
+			: await import('@wp-playground/fs-ext')
 					.then((m) => m.flockSync)
 					.catch(() => {
 						logger.warn(

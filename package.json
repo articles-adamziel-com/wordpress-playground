@@ -128,7 +128,6 @@
 		"@playwright/test": "1.47.1",
 		"@types/ajv": "1.0.0",
 		"@types/file-saver": "^2.0.5",
-		"@types/fs-ext": "2.0.3",
 		"@types/fs-extra": "11.0.4",
 		"@types/ini": "4.1.0",
 		"@types/jest": "29.5.14",
@@ -214,6 +213,6 @@
 		"npm": ">=10.1.0"
 	},
 	"optionalDependencies": {
-		"fs-ext": "2.1.1"
+		"@wp-playground/fs-ext": "file:packages/playground/fs-ext"
 	}
 }

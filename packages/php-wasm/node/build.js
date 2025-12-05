@@ -122,7 +122,7 @@ async function build() {
 		format: 'cjs',
 		bundle: true,
 		tsconfig: 'packages/php-wasm/node/tsconfig.json',
-		external: ['@php-wasm/*', '@wp-playground/*', 'ws', 'fs-ext'],
+		external: ['@php-wasm/*', '@wp-playground/*', 'ws'],
 		loader: {
 			'.php': 'text',
 			'.ini': 'file',
@@ -160,7 +160,6 @@ const __dirname = import.meta.dirname;
 			'ws',
 			'fs',
 			'path',
-			'fs-ext',
 		],
 		supported: {
 			'dynamic-import': true,

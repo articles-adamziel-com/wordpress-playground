@@ -17,7 +17,7 @@ import {
 import type { SupportedPHPVersion } from '@php-wasm/universal';
 import { joinPaths } from '@php-wasm/util';
 import { jspi } from 'wasm-feature-detect';
-import { flockSync as nativeFlockSync } from 'fs-ext';
+import { flockSync as nativeFlockSync } from '@wp-playground/fs-ext';
 
 const TEST_FILE1 = new URL('test1.txt', import.meta.url).pathname;
 const TEST_FILE2 = new URL('test2.txt', import.meta.url).pathname;

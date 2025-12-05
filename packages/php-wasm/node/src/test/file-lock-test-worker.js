@@ -1,5 +1,5 @@
 import { openSync, closeSync } from 'fs';
-import { flockSync } from 'fs-ext';
+import { flockSync } from '@wp-playground/fs-ext';
 
 process.on('message', (message) => {
 	if (message.type === 'acquire') {

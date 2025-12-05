@@ -1,0 +1,237 @@
+name: Build fs-ext Prebuilds
+
+on:
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: 'Publish prebuilds to release'
+        required: false
+        default: false
+        type: boolean
+  push:
+    paths:
+      - 'packages/playground/fs-ext/**'
+      - '.github/workflows/build-fs-ext-prebuilds.yml'
+    branches:
+      - trunk
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Linux x64 (glibc)
+          - os: ubuntu-22.04
+            arch: x64
+            node: 18
+            platform: linux
+          - os: ubuntu-22.04
+            arch: x64
+            node: 20
+            platform: linux
+          - os: ubuntu-22.04
+            arch: x64
+            node: 22
+            platform: linux
+
+          # Linux arm64 (glibc) - using QEMU
+          - os: ubuntu-22.04
+            arch: arm64
+            node: 18
+            platform: linux
+            qemu: true
+          - os: ubuntu-22.04
+            arch: arm64
+            node: 20
+            platform: linux
+            qemu: true
+          - os: ubuntu-22.04
+            arch: arm64
+            node: 22
+            platform: linux
+            qemu: true
+
+          # macOS x64
+          - os: macos-13
+            arch: x64
+            node: 18
+            platform: darwin
+          - os: macos-13
+            arch: x64
+            node: 20
+            platform: darwin
+          - os: macos-13
+            arch: x64
+            node: 22
+            platform: darwin
+
+          # macOS arm64
+          - os: macos-14
+            arch: arm64
+            node: 18
+            platform: darwin
+          - os: macos-14
+            arch: arm64
+            node: 20
+            platform: darwin
+          - os: macos-14
+            arch: arm64
+            node: 22
+            platform: darwin
+
+          # Windows x64
+          - os: windows-2022
+            arch: x64
+            node: 18
+            platform: win32
+          - os: windows-2022
+            arch: x64
+            node: 20
+            platform: win32
+          - os: windows-2022
+            arch: x64
+            node: 22
+            platform: win32
+
+    runs-on: ${{ matrix.os }}
+    name: ${{ matrix.platform }}-${{ matrix.arch }}-node${{ matrix.node }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up QEMU for ARM64
+        if: matrix.qemu
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm64
+
+      - name: Setup Node.js
+        if: "!matrix.qemu"
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+
+      - name: Install dependencies (native)
+        if: "!matrix.qemu"
+        working-directory: packages/playground/fs-ext
+        run: npm install
+
+      - name: Build prebuild (native)
+        if: "!matrix.qemu"
+        working-directory: packages/playground/fs-ext
+        run: npx prebuildify --napi=false --strip --tag-libc
+
+      - name: Build prebuild (QEMU arm64)
+        if: matrix.qemu
+        uses: docker://node:${{ matrix.node }}-bookworm
+        with:
+          options: --platform linux/arm64
+          args: /bin/bash -c "cd /github/workspace/packages/playground/fs-ext && npm install && npx prebuildify --napi=false --strip --tag-libc"
+
+      - name: List prebuilds
+        working-directory: packages/playground/fs-ext
+        shell: bash
+        run: |
+          echo "Built prebuilds:"
+          ls -la prebuilds/ || echo "No prebuilds directory"
+          find prebuilds -type f -name "*.node" 2>/dev/null || echo "No .node files found"
+
+      - name: Upload prebuild artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: prebuild-${{ matrix.platform }}-${{ matrix.arch }}-node${{ matrix.node }}
+          path: packages/playground/fs-ext/prebuilds/
+          if-no-files-found: error
+
+  # Aggregate all prebuilds into a single artifact
+  aggregate:
+    needs: build
+    runs-on: ubuntu-latest
+    name: Aggregate Prebuilds
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download all prebuild artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: prebuilds-downloaded
+          pattern: prebuild-*
+
+      - name: Aggregate prebuilds
+        run: |
+          mkdir -p packages/playground/fs-ext/prebuilds
+
+          # Copy all prebuilds to the package directory
+          for dir in prebuilds-downloaded/prebuild-*; do
+            if [ -d "$dir" ]; then
+              echo "Processing $dir"
+              cp -r "$dir"/* packages/playground/fs-ext/prebuilds/ 2>/dev/null || true
+            fi
+          done
+
+          echo "Final prebuilds structure:"
+          find packages/playground/fs-ext/prebuilds -type f -name "*.node" | head -50
+
+      - name: Upload aggregated prebuilds
+        uses: actions/upload-artifact@v4
+        with:
+          name: fs-ext-prebuilds-all
+          path: packages/playground/fs-ext/prebuilds/
+          if-no-files-found: error
+
+  # Test the prebuilds work correctly
+  test:
+    needs: aggregate
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-22.04
+            node: 20
+          - os: macos-14
+            node: 20
+          - os: windows-2022
+            node: 20
+
+    runs-on: ${{ matrix.os }}
+    name: Test on ${{ matrix.os }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+
+      - name: Download aggregated prebuilds
+        uses: actions/download-artifact@v4
+        with:
+          name: fs-ext-prebuilds-all
+          path: packages/playground/fs-ext/prebuilds/
+
+      - name: Install dependencies (skip native build)
+        working-directory: packages/playground/fs-ext
+        run: npm install --ignore-scripts
+
+      - name: List available prebuilds
+        working-directory: packages/playground/fs-ext
+        shell: bash
+        run: |
+          echo "Available prebuilds:"
+          find prebuilds -type f -name "*.node" || echo "No prebuilds found"
+
+      - name: Test loading the module
+        working-directory: packages/playground/fs-ext
+        shell: bash
+        run: |
+          node -e "
+            const fsExt = require('./fs-ext.js');
+            console.log('Module loaded successfully');
+            console.log('Available constants:', Object.keys(fsExt.constants));
+            console.log('flockSync available:', typeof fsExt.flockSync === 'function');
+          "
