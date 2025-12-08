@@ -16,7 +16,9 @@ if (array_key_exists('redirect', $_GET) && $_GET["redirect"] === "1") {
         $redirect_uri = 'https://' . $redirect_host . '?' . $redirect_query;
         $redirect_param = isset($_GET['redirect_uri']) ? "&redirect_uri=" . urlencode($redirect_uri) : '';
     }
-    header("Location: https://github.com/login/oauth/authorize?client_id={$client_id}&scope=repo" . $redirect_param);
+    // Pass through state parameter for CSRF protection
+    $state_param = isset($_GET['state']) ? "&state=" . urlencode($_GET['state']) : '';
+    header("Location: https://github.com/login/oauth/authorize?client_id={$client_id}&scope=repo" . $redirect_param . $state_param);
     die();
 }
 

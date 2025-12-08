@@ -28,6 +28,10 @@ export const oAuthMiddleware = async (
 		} else if (query.has('redirect_uri')) {
 			params.redirect_uri = query.get('redirect_uri')!;
 		}
+		// Pass through state parameter for CSRF protection
+		if (query.has('state')) {
+			params.state = query.get('state')!;
+		}
 		const redirectQS = new URLSearchParams(params).toString();
 		res.writeHead(302, {
 			location: `https://github.com/login/oauth/authorize?${redirectQS}`,

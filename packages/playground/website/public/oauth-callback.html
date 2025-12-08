@@ -63,9 +63,26 @@
                 messageEl.textContent = 'Authorization successful! This window will close automatically.';
             }
 
+            // Security check: Verify opener is the top-level window
+            // This prevents a rogue plugin in an iframe from stealing credentials
+            function isOpenerValid() {
+                if (!window.opener) {
+                    return false;
+                }
+                try {
+                    // Check if opener is the top-level window (not an iframe)
+                    // This will throw if cross-origin, which is fine - we only accept same-origin
+                    return window.opener === window.opener.top;
+                } catch (e) {
+                    // Cross-origin access denied - opener is not from our origin
+                    return false;
+                }
+            }
+
             try {
                 const urlParams = new URLSearchParams(window.location.search);
                 const code = urlParams.get('code');
+                const state = urlParams.get('state'); // Nonce for security verification
                 const error = urlParams.get('error');
                 const errorDescription = urlParams.get('error_description');
 
@@ -75,6 +92,15 @@
 
                 if (!code) {
                     throw new Error('No authorization code received');
+                }
+
+                if (!state) {
+                    throw new Error('Invalid OAuth state - possible security issue');
+                }
+
+                // Verify opener is valid before proceeding
+                if (!isOpenerValid()) {
+                    throw new Error('Invalid opener window - authentication rejected for security');
                 }
 
                 // Exchange the code for an access token
@@ -95,30 +121,30 @@
                     throw new Error('No access token received');
                 }
 
-                // Send the token to the opener window
-                if (window.opener) {
-                    window.opener.postMessage({
-                        type: 'github-oauth-success',
-                        token: data.access_token,
-                    }, window.location.origin);
+                // Send the token to the opener window with nonce for verification
+                window.opener.postMessage({
+                    type: 'github-oauth-success',
+                    token: data.access_token,
+                    nonce: state,
+                }, window.location.origin);
 
-                    showSuccess();
+                showSuccess();
 
-                    // Close the popup after a short delay
-                    setTimeout(() => {
-                        window.close();
-                    }, 1000);
-                } else {
-                    throw new Error('This page must be opened as a popup');
-                }
+                // Close the popup after a short delay
+                setTimeout(() => {
+                    window.close();
+                }, 1000);
             } catch (err) {
                 showError(err.message || 'Authorization failed');
 
-                // Notify the opener about the error
-                if (window.opener) {
+                // Only notify opener if it's valid
+                if (isOpenerValid()) {
+                    const urlParams = new URLSearchParams(window.location.search);
+                    const state = urlParams.get('state');
                     window.opener.postMessage({
                         type: 'github-oauth-error',
                         error: err.message,
+                        nonce: state,
                     }, window.location.origin);
                 }
             }
