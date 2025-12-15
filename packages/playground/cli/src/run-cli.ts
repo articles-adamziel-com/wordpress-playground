@@ -583,10 +583,10 @@ export async function parseOptionsAndRunCLI(argsToParse: string[]) {
 
 		// Transform 'start' command args to server-compatible args
 		if (command === 'start') {
-			shouldOpenBrowser = args['browser'] !== false;
+			shouldOpenBrowser = !args['skip-browser'];
 
 			// Enable auto-mount unless explicitly disabled
-			if (!args['no-auto-detect']) {
+			if (!args['no-auto-mount']) {
 				args['auto-mount'] = (args['path'] as string) || process.cwd();
 			}
 
