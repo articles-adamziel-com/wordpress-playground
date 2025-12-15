@@ -578,9 +578,31 @@ export async function parseOptionsAndRunCLI(argsToParse: string[]) {
 			process.exit(1);
 		}
 
+		// Track whether to open browser (only for 'start' command)
+		let shouldOpenBrowser = false;
+
+		// Transform 'start' command args to server-compatible args
+		if (command === 'start') {
+			shouldOpenBrowser = args['browser'] !== false;
+
+			// Enable auto-mount unless explicitly disabled
+			if (!args['no-auto-detect']) {
+				args['auto-mount'] = (args['path'] as string) || process.cwd();
+			}
+
+			// Verbosity handling
+			if (args['quiet']) {
+				args['verbosity'] = 'quiet';
+			}
+
+			// Intl is always enabled for the start command
+			args['intl'] = true;
+		}
+
 		const cliArgs = {
 			...args,
-			command,
+			// The 'start' command internally runs as 'server'
+			command: command === 'start' ? 'server' : command,
 			mount: [
 				...((args['mount'] as Mount[]) || []),
 				...((args['mount-dir'] as Mount[]) || []),
@@ -595,6 +617,11 @@ export async function parseOptionsAndRunCLI(argsToParse: string[]) {
 		if (cliServer === undefined) {
 			// No server was started, so we are done with our work.
 			process.exit(0);
+		}
+
+		// Open browser for the 'start' command
+		if (shouldOpenBrowser) {
+			openInBrowser(cliServer.serverUrl);
 		}
 
 		const cleanUpCliAndExit = (() => {
