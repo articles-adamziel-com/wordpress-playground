@@ -9,6 +9,27 @@ All notable changes to this project are documented in this file by a CI job
 that runs on every NPM release. The file follows the [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 format.
 
+## [v3.0.30] (2025-12-17) 
+
+### Documentation
+
+- Rephrase Opcache module injection comments. ([#3053](https://github.com/WordPress/wordpress-playground/pull/3053))
+
+### PHP WebAssembly
+
+- [ Intl ] Parallelize memoizedFetch methods when enabling Intl in PHP.wasm web. ([#3058](https://github.com/WordPress/wordpress-playground/pull/3058))
+
+### Bug Fixes
+
+- Update package lock files in WordPress builds themes to fix current security issues. ([#3057](https://github.com/WordPress/wordpress-playground/pull/3057))
+
+### Contributors
+
+The following contributors merged PRs in this release:
+
+@mho22
+
+
 ## [v3.0.29] (2025-12-17) 
 
 ### Tools
