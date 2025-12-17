@@ -8,6 +8,10 @@
 		},
 		"./package.json": "./package.json"
 	},
+	"repository": {
+		"type": "git",
+		"url": "https://github.com/WordPress/wordpress-playground"
+	},
 	"type": "module",
 	"main": "./index.cjs",
 	"module": "./index.js",
