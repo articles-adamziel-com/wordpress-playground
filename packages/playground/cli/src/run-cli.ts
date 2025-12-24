@@ -587,7 +587,8 @@ export async function parseOptionsAndRunCLI(argsToParse: string[]) {
 
 			// Enable auto-mount unless explicitly disabled
 			if (!args['no-auto-mount']) {
-				args['auto-mount'] = (args['path'] as string) || process.cwd();
+				args['auto-mount'] = args['autoMount'] =
+					(args['path'] as string) || process.cwd();
 			}
 
 			// Verbosity handling
