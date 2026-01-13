@@ -45,6 +45,7 @@ import { BlueprintsV1Handler } from './blueprints-v1/blueprints-v1-handler';
 import { startBridge } from '@php-wasm/xdebug-bridge';
 import path from 'path';
 import os from 'os';
+import { exec } from 'child_process';
 import {
 	cleanupStalePlaygroundTempDirs,
 	createPlaygroundCliTempDir,
@@ -282,6 +283,83 @@ export async function parseOptionsAndRunCLI(argsToParse: string[]) {
 			},
 		};
 
+		/**
+		 * Options for the high-level `start` command.
+		 * This command provides a simplified, opinionated interface for common use cases,
+		 * similar to wp-now. It auto-detects project type and uses sensible defaults.
+		 */
+		const startCommandOptions: Record<string, YargsOptions> = {
+			path: {
+				describe:
+					'Path to the project directory. Playground will auto-detect if this is a plugin, theme, wp-content, or WordPress directory.',
+				type: 'string',
+				default: process.cwd(),
+			},
+			php: {
+				describe: 'PHP version to use.',
+				type: 'string',
+				default: RecommendedPHPVersion,
+				choices: SupportedPHPVersions,
+			},
+			wp: {
+				describe: 'WordPress version to use.',
+				type: 'string',
+				default: 'latest',
+			},
+			port: {
+				describe: 'Port to listen on.',
+				type: 'number',
+				default: 9400,
+			},
+			blueprint: {
+				describe:
+					'Path to a Blueprint JSON file to execute on startup.',
+				type: 'string',
+			},
+			login: {
+				describe: 'Auto-login as the admin user.',
+				type: 'boolean',
+				default: true,
+			},
+			xdebug: {
+				describe: 'Enable Xdebug for debugging.',
+				type: 'boolean',
+				default: false,
+			},
+			'experimental-unsafe-ide-integration':
+				sharedOptions['experimental-unsafe-ide-integration'],
+			'skip-browser': {
+				describe:
+					'Do not open the site in your default browser on startup.',
+				type: 'boolean',
+				default: false,
+			},
+			quiet: {
+				describe: 'Suppress non-essential output.',
+				type: 'boolean',
+				default: false,
+			},
+			// Advanced options for power users who need more control
+			'site-url': {
+				describe:
+					'Override the site URL. By default, derived from the port (http://127.0.0.1:<port>).',
+				type: 'string',
+			},
+			mount: {
+				describe:
+					'Mount a directory to the PHP runtime (can be used multiple times). Format: /host/path:/vfs/path. Use this for additional mounts beyond auto-detection.',
+				type: 'array',
+				string: true,
+				coerce: parseMountWithDelimiterArguments,
+			},
+			'no-auto-mount': {
+				describe:
+					'Disable automatic project type detection. Use --mount to manually specify mounts instead.',
+				type: 'boolean',
+				default: false,
+			},
+		};
+
 		const buildSnapshotOnlyOptions: Record<string, YargsOptions> = {
 			outfile: {
 				describe: 'When building, write to this output file.',
@@ -293,8 +371,27 @@ export async function parseOptionsAndRunCLI(argsToParse: string[]) {
 		const yargsObject = yargs(argsToParse)
 			.usage('Usage: wp-playground <command> [options]')
 			.command(
+				'start',
+				'Start a local WordPress server with automatic project detection (recommended)',
+				(yargsInstance: Argv) =>
+					yargsInstance
+						.usage(
+							'Usage: wp-playground start [options]\n\n' +
+								'The easiest way to run WordPress locally. Automatically detects\n' +
+								'if your directory contains a plugin, theme, wp-content, or\n' +
+								'WordPress installation and configures everything for you.\n\n' +
+								'Examples:\n' +
+								'  wp-playground start                    # Start in current directory\n' +
+								'  wp-playground start --path=./my-plugin # Start with a specific path\n' +
+								'  wp-playground start --wp=6.7 --php=8.3 # Use specific versions\n' +
+								'  wp-playground start --skip-browser     # Skip opening browser\n' +
+								'  wp-playground start --no-auto-mount    # Disable auto-detection'
+						)
+						.options(startCommandOptions)
+			)
+			.command(
 				'server',
-				'Start a local WordPress server',
+				'Start a local WordPress server (advanced, low-level)',
 				(yargsInstance: Argv) =>
 					yargsInstance.options({
 						...sharedOptions,
@@ -465,14 +562,41 @@ export async function parseOptionsAndRunCLI(argsToParse: string[]) {
 
 		const command = args._[0] as string;
 
-		if (!['run-blueprint', 'server', 'build-snapshot'].includes(command)) {
+		if (
+			!['start', 'run-blueprint', 'server', 'build-snapshot'].includes(
+				command
+			)
+		) {
 			yargsObject.showHelp();
 			process.exit(1);
 		}
 
+		// Track whether to open browser (only for 'start' command)
+		let shouldOpenBrowser = false;
+
+		// Transform 'start' command args to server-compatible args
+		if (command === 'start') {
+			shouldOpenBrowser = args['skip-browser'] !== true;
+
+			// Enable auto-mount unless explicitly disabled
+			if (!args['no-auto-mount']) {
+				args['auto-mount'] = args['autoMount'] =
+					(args['path'] as string) || process.cwd();
+			}
+
+			// Verbosity handling
+			if (args['quiet']) {
+				args['verbosity'] = 'quiet';
+			}
+
+			// Intl is always enabled for the start command
+			args['intl'] = true;
+		}
+
 		const cliArgs = {
 			...args,
-			command,
+			// The 'start' command internally runs as 'server'
+			command: command === 'start' ? 'server' : command,
 			mount: [
 				...((args['mount'] as Mount[]) || []),
 				...((args['mount-dir'] as Mount[]) || []),
@@ -487,6 +611,11 @@ export async function parseOptionsAndRunCLI(argsToParse: string[]) {
 		if (cliServer === undefined) {
 			// No server was started, so we are done with our work.
 			process.exit(0);
+		}
+
+		// Open browser for the 'start' command
+		if (shouldOpenBrowser) {
+			openInBrowser(cliServer.serverUrl);
 		}
 
 		const cleanUpCliAndExit = (() => {
@@ -537,7 +666,7 @@ export interface RunCLIArgs {
 		| BlueprintV1Declaration
 		| BlueprintV2Declaration
 		| BlueprintBundle;
-	command: 'server' | 'run-blueprint' | 'build-snapshot';
+	command: 'start' | 'server' | 'run-blueprint' | 'build-snapshot';
 	debug?: boolean;
 	login?: boolean;
 	mount?: Mount[];
@@ -578,6 +707,11 @@ export interface RunCLIArgs {
 	'db-path'?: string;
 	'truncate-new-site-directory'?: boolean;
 	allow?: string;
+
+	// --------- Start command args -----------
+	path?: string;
+	skipBrowser?: boolean;
+	noAutoMount?: boolean;
 }
 
 type PlaygroundCliWorker =
@@ -1301,6 +1435,35 @@ async function exposeFileLockManager(fileLockManager: FileLockManagerForNode) {
 		await exposeSyncAPI(fileLockManager, port1);
 	}
 	return port2;
+}
+
+/**
+ * Open a URL in the user's default browser.
+ * Works cross-platform: macOS, Windows, and Linux.
+ */
+function openInBrowser(url: string): void {
+	const platform = os.platform();
+	let command: string;
+
+	switch (platform) {
+		case 'darwin':
+			command = `open "${url}"`;
+			break;
+		case 'win32':
+			command = `start "" "${url}"`;
+			break;
+		default:
+			// Linux and other Unix-like systems
+			command = `xdg-open "${url}"`;
+			break;
+	}
+
+	exec(command, (error) => {
+		if (error) {
+			// Don't fail the CLI if browser opening fails, just log a debug message
+			logger.debug(`Could not open browser: ${error.message}`);
+		}
+	});
 }
 
 async function zipSite(
