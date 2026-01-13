@@ -8,9 +8,47 @@ import {
 	resolveRuntimeConfiguration,
 	BlueprintReflection,
 } from '.';
-import { collectPhpLogs, logger } from '@php-wasm/logger';
+import {
+	collectPhpLogs,
+	logger,
+	DebugTimeline,
+	collectPhpRuntimeEvents,
+	createBlueprintV1Callbacks,
+	collectNavigationEvents,
+} from '@php-wasm/logger';
+import type { DebugLogAPI } from '@wp-playground/remote';
 import { consumeAPI } from '@php-wasm/universal';
 import type { PHPWebExtension } from '@php-wasm/web';
+
+/**
+ * Check if debug timeline is enabled via query param.
+ */
+function getDebugLogConfig(): { enabled: boolean; verbose: boolean } {
+	if (typeof window === 'undefined') {
+		return { enabled: false, verbose: false };
+	}
+	const params = new URLSearchParams(window.location.search);
+	const debugLog = params.get('debug-log');
+	return {
+		enabled: debugLog === 'verbose' || debugLog === 'true',
+		verbose: debugLog === 'verbose',
+	};
+}
+
+/**
+ * Create the debugLog API from a DebugTimeline instance.
+ */
+function createDebugLogAPI(timeline: DebugTimeline): DebugLogAPI {
+	return {
+		listSessions: () => timeline.listSessions(),
+		readSession: (id: string) => timeline.readSession(id),
+		readLatest: (n?: number) => timeline.readLatest(n),
+		clearSessions: () => timeline.clearSessions(),
+		exportSession: (id: string, format?) =>
+			timeline.exportSession(id, format),
+		getCurrentSession: () => timeline.getCurrentSession(),
+	};
+}
 
 export class BlueprintsV1Handler {
 	private readonly options: StartPlaygroundOptions;
@@ -103,18 +141,77 @@ export class BlueprintsV1Handler {
 		downloadProgress.finish();
 
 		collectPhpLogs(logger, playground);
+
+		// Initialize debug timeline if enabled
+		const debugConfig = getDebugLogConfig();
+		let timeline: DebugTimeline | null = null;
+		if (debugConfig.enabled) {
+			timeline = new DebugTimeline({
+				verboseMode: debugConfig.verbose,
+				siteSlug: scope,
+				phpVersion: runtimeConfiguration.phpVersion,
+				wpVersion: runtimeConfiguration.wpVersion,
+			});
+			await timeline.initialize();
+
+			// Collect PHP runtime events
+			collectPhpRuntimeEvents(timeline, playground);
+
+			// Collect navigation events
+			collectNavigationEvents(timeline, playground as any);
+
+			// Log initial boot
+			timeline.log({
+				category: 'runtime',
+				type: 'runtime.initialized',
+				message: `Playground booted with PHP ${runtimeConfiguration.phpVersion}, WP ${runtimeConfiguration.wpVersion}`,
+				data: {
+					phpVersion: runtimeConfiguration.phpVersion,
+					wpVersion: runtimeConfiguration.wpVersion,
+					scope,
+				},
+			});
+
+			// Attach debugLog API to playground client
+			(playground as any).debugLog = createDebugLogAPI(timeline);
+		}
+
 		onClientConnected?.(playground);
 
 		const reflection = await BlueprintReflection.create(blueprint);
 		if (reflection.getVersion() === 1) {
+			// Create step callbacks that log to timeline
+			const timelineCallbacks = timeline
+				? createBlueprintV1Callbacks(timeline, {
+						onStepCompleted: onBlueprintStepCompleted,
+					})
+				: null;
+
 			const compiled = await compileBlueprintV1(blueprint, {
 				progress: executionProgress,
-				onStepCompleted: onBlueprintStepCompleted,
+				onStepCompleted:
+					timelineCallbacks?.onStepCompleted ||
+					onBlueprintStepCompleted,
 				onBlueprintValidated,
 				corsProxy,
 				gitAdditionalHeadersCallback,
 			});
+
+			// Log blueprint start
+			timeline?.log({
+				category: 'blueprint',
+				type: 'blueprint.step.start',
+				message: 'Starting blueprint execution',
+			});
+
 			await runBlueprintV1Steps(compiled, playground);
+
+			// Log blueprint completion
+			timeline?.log({
+				category: 'blueprint',
+				type: 'blueprint.step.finish',
+				message: 'Blueprint execution completed',
+			});
 		}
 
 		/**

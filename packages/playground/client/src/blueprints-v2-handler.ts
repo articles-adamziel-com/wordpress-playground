@@ -1,7 +1,45 @@
 import type { ProgressTracker } from '@php-wasm/progress';
 import type { PlaygroundClient, StartPlaygroundOptions } from '.';
-import { collectPhpLogs, logger } from '@php-wasm/logger';
+import {
+	collectPhpLogs,
+	logger,
+	DebugTimeline,
+	collectPhpRuntimeEvents,
+	collectBlueprintV2Events,
+	collectNavigationEvents,
+} from '@php-wasm/logger';
+import type { DebugLogAPI } from '@wp-playground/remote';
 import { consumeAPI } from '@php-wasm/universal';
+
+/**
+ * Check if debug timeline is enabled via query param.
+ */
+function getDebugLogConfig(): { enabled: boolean; verbose: boolean } {
+	if (typeof window === 'undefined') {
+		return { enabled: false, verbose: false };
+	}
+	const params = new URLSearchParams(window.location.search);
+	const debugLog = params.get('debug-log');
+	return {
+		enabled: debugLog === 'verbose' || debugLog === 'true',
+		verbose: debugLog === 'verbose',
+	};
+}
+
+/**
+ * Create the debugLog API from a DebugTimeline instance.
+ */
+function createDebugLogAPI(timeline: DebugTimeline): DebugLogAPI {
+	return {
+		listSessions: () => timeline.listSessions(),
+		readSession: (id: string) => timeline.readSession(id),
+		readLatest: (n?: number) => timeline.readLatest(n),
+		clearSessions: () => timeline.clearSessions(),
+		exportSession: (id: string, format?) =>
+			timeline.exportSession(id, format),
+		getCurrentSession: () => timeline.getCurrentSession(),
+	};
+}
 
 export class BlueprintsV2Handler {
 	private readonly options: StartPlaygroundOptions;
@@ -104,6 +142,37 @@ export class BlueprintsV2Handler {
 		downloadProgress.finish();
 
 		collectPhpLogs(logger, playground);
+
+		// Initialize debug timeline if enabled
+		const debugConfig = getDebugLogConfig();
+		if (debugConfig.enabled) {
+			const timeline = new DebugTimeline({
+				verboseMode: debugConfig.verbose,
+				siteSlug: scope,
+			});
+			await timeline.initialize();
+
+			// Collect PHP runtime events
+			collectPhpRuntimeEvents(timeline, playground);
+
+			// Collect Blueprint V2 message events
+			collectBlueprintV2Events(timeline, playground as any);
+
+			// Collect navigation events
+			collectNavigationEvents(timeline, playground as any);
+
+			// Log initial boot
+			timeline.log({
+				category: 'runtime',
+				type: 'runtime.initialized',
+				message: 'Playground booted (Blueprints V2 mode)',
+				data: { scope },
+			});
+
+			// Attach debugLog API to playground client
+			(playground as any).debugLog = createDebugLogAPI(timeline);
+		}
+
 		onClientConnected?.(playground);
 
 		// @TODO: Get the landing page from the Blueprint.

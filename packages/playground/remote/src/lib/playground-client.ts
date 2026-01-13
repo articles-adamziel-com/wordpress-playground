@@ -10,6 +10,30 @@ import type {
 	MountDescriptor,
 	WorkerBootOptions,
 } from './playground-worker-endpoint';
+import type {
+	TimelineEntry,
+	TimelineSession,
+	TimelineExportFormat,
+} from '@php-wasm/logger';
+
+/**
+ * Debug log API for accessing the debug timeline.
+ * Only available when ?debug-log=verbose query param is set.
+ */
+export interface DebugLogAPI {
+	/** Get all available sessions */
+	listSessions(): Promise<TimelineSession[]>;
+	/** Read all entries from a specific session */
+	readSession(id: string): Promise<TimelineEntry[]>;
+	/** Read the latest n entries from the current session */
+	readLatest(n?: number): Promise<TimelineEntry[]>;
+	/** Clear all sessions */
+	clearSessions(): Promise<void>;
+	/** Export a session in the specified format */
+	exportSession(id: string, format?: TimelineExportFormat): Promise<string>;
+	/** Get the current session info */
+	getCurrentSession(): TimelineSession | null;
+}
 
 export interface WebClientMixin extends ProgressReceiver {
 	/**
@@ -71,6 +95,12 @@ export interface WebClientMixin extends ProgressReceiver {
 	unmountOpfs(mountpoint: string): Promise<void>;
 
 	boot(options: WorkerBootOptions): Promise<void>;
+
+	/**
+	 * Debug timeline API for developers.
+	 * Only available when ?debug-log=verbose query param is set.
+	 */
+	debugLog?: DebugLogAPI;
 }
 
 /**

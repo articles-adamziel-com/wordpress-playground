@@ -11,21 +11,62 @@ import type {
 } from '../../lib/state/redux/store';
 import { useDispatch, useSelector } from 'react-redux';
 import { setActiveModal } from '../../lib/state/redux/slice-ui';
+import { DebugTimelineView } from '../debug-timeline';
+import { usePlaygroundClient } from '../../lib/use-playground-client';
+
+type LogModalTab = 'logs' | 'timeline';
 
 export function LogModal(props: { description?: JSX.Element; title?: string }) {
 	const activeModal = useSelector(
 		(state: PlaygroundReduxState) => state.ui.activeModal
 	);
 	const dispatch: PlaygroundDispatch = useDispatch();
+	const [activeTab, setActiveTab] = useState<LogModalTab>('logs');
+	const client = usePlaygroundClient();
+
+	// Check if debug timeline is available
+	// eslint-disable-next-line @typescript-eslint/no-explicit-any
+	const hasDebugTimeline = !!(client as any)?.debugLog;
+	const showTimeline = hasDebugTimeline && activeTab === 'timeline';
 
 	function onClose() {
 		dispatch(setActiveModal(null));
 	}
 
 	return (
-		<Modal title={props.title || 'Error Logs'} onRequestClose={onClose}>
+		<Modal
+			title={
+				props.title ||
+				(hasDebugTimeline ? 'Logs & Timeline' : 'Error Logs')
+			}
+			onRequestClose={onClose}
+		>
 			<div>{props.description}</div>
-			<SiteLogs key={activeModal} className={css.logsInsideModal} />
+			{hasDebugTimeline && (
+				<div className={css.tabs}>
+					<button
+						className={classNames(css.tab, {
+							[css.tabActive]: activeTab === 'logs',
+						})}
+						onClick={() => setActiveTab('logs')}
+					>
+						Error Logs
+					</button>
+					<button
+						className={classNames(css.tab, {
+							[css.tabActive]: activeTab === 'timeline',
+						})}
+						onClick={() => setActiveTab('timeline')}
+					>
+						Debug Timeline
+					</button>
+				</div>
+			)}
+			{showTimeline ? (
+				<DebugTimelineView />
+			) : (
+				<SiteLogs key={activeModal} className={css.logsInsideModal} />
+			)}
 		</Modal>
 	);
 }
