@@ -26,7 +26,6 @@ import {
 	expandAutoMounts,
 	parseMountDirArguments,
 	parseMountWithDelimiterArguments,
-	type AutoMountResult,
 } from './mounts';
 import { startServer } from './start-server';
 import type { PlaygroundCliBlueprintV1Worker } from './blueprints-v1/worker-thread-v1';
@@ -764,12 +763,8 @@ export async function runCLI(args: RunCLIArgs): Promise<RunCLIServer | void> {
 		RemoteAPI<PlaygroundCliWorker>
 	> = new Map();
 
-	let autoMountResult: AutoMountResult = { type: 'none' };
-
 	if (args.command === 'start') {
-		const result = expandStartCommandArgs(args);
-		args = result.args;
-		autoMountResult = result.autoMountResult;
+		args = expandStartCommandArgs(args);
 	}
 
 	if (args.autoMount !== undefined) {
@@ -779,9 +774,7 @@ export async function runCLI(args: RunCLIArgs): Promise<RunCLIServer | void> {
 			// it allows us to test the default as part of the runCLI() unit tests.
 			args = { ...args, autoMount: process.cwd() };
 		}
-		const result = expandAutoMounts(args);
-		args = result.args;
-		autoMountResult = result.autoMountResult;
+		args = expandAutoMounts(args);
 	}
 
 	if (args.wordpressInstallMode === undefined) {
@@ -829,7 +822,6 @@ export async function runCLI(args: RunCLIArgs): Promise<RunCLIServer | void> {
 				...(args.mount || []),
 				...(args['mount-before-install'] || []),
 			],
-			autoMountResult,
 			blueprint:
 				typeof args.blueprint === 'string' ? args.blueprint : undefined,
 		});
@@ -1353,21 +1345,17 @@ export async function runCLI(args: RunCLIArgs): Promise<RunCLIServer | void> {
  * (Yes, the `start` command is just a convenience wrapper to provide useful defaults
  * for the `server` command.)
  */
-function expandStartCommandArgs(args: RunCLIArgs & { reset?: boolean }): {
-	args: RunCLIArgs;
-	autoMountResult: AutoMountResult;
-} {
+function expandStartCommandArgs(
+	args: RunCLIArgs & { reset?: boolean }
+): RunCLIArgs {
 	let newArgs = { ...args, command: 'server' };
-	let autoMountResult: AutoMountResult = { type: 'none' };
 
 	/**
 	 * Enable auto-mount unless explicitly disabled
 	 */
 	if (!args.noAutoMount) {
 		newArgs.autoMount = path.resolve(process.cwd(), newArgs['path'] ?? '');
-		const result = expandAutoMounts(newArgs as RunCLIArgs);
-		newArgs = result.args;
-		autoMountResult = result.autoMountResult;
+		newArgs = expandAutoMounts(newArgs as RunCLIArgs);
 		// Delete the autoMount argument to avoid double expansion later on.
 		delete newArgs.autoMount;
 	}
@@ -1448,7 +1436,7 @@ function expandStartCommandArgs(args: RunCLIArgs & { reset?: boolean }): {
 		}
 	}
 
-	return { args: newArgs as RunCLIArgs, autoMountResult };
+	return newArgs as RunCLIArgs;
 }
 
 export type SpawnedWorker = {

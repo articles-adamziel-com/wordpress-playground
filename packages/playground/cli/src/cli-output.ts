@@ -9,7 +9,7 @@
  */
 
 import { shouldRenderProgress } from './utils/progress';
-import type { AutoMountResult } from './mounts';
+import type { Mount } from '@php-wasm/cli-util';
 
 export interface CLIOutputOptions {
 	verbosity: string;
@@ -22,8 +22,7 @@ export interface ConfigSummary {
 	port: number;
 	xdebug: boolean;
 	intl: boolean;
-	mounts: Array<{ hostPath: string; vfsPath: string }>;
-	autoMountResult?: AutoMountResult;
+	mounts: Mount[];
 	blueprint?: string;
 }
 
@@ -78,10 +77,6 @@ export class CLIOutput {
 		return this.isTTY ? `\x1b[31m${text}\x1b[0m` : text;
 	}
 
-	private magenta(text: string): string {
-		return this.isTTY ? `\x1b[35m${text}\x1b[0m` : text;
-	}
-
 	/**
 	 * Display the WordPress Playground CLI banner.
 	 */
@@ -113,31 +108,16 @@ export class CLIOutput {
 			lines.push(`${this.dim('Extensions')} ${extensions.join(', ')}`);
 		}
 
-		// Auto-mount result
-		if (config.autoMountResult && config.autoMountResult.type !== 'none') {
-			const mount = config.autoMountResult;
-			let mountDesc: string;
-			switch (mount.type) {
-				case 'plugin':
-					mountDesc = `${this.green('plugin')} ${this.bold(mount.name)}`;
-					break;
-				case 'theme':
-					mountDesc = `${this.magenta('theme')} ${this.bold(mount.name)}`;
-					break;
-				case 'wp-content':
-					mountDesc = `${this.cyan('wp-content')} directory`;
-					break;
-				case 'wordpress':
-					mountDesc = `${this.cyan('WordPress')} installation`;
-					break;
-				case 'directory':
-					mountDesc = `host directory`;
-					break;
+		// Display all mounts
+		if (config.mounts.length > 0) {
+			for (const mount of config.mounts) {
+				const autoMountLabel = mount.autoMounted
+					? ` ${this.dim('(auto-mount)')}`
+					: '';
+				lines.push(
+					`${this.dim('Mount')} ${mount.hostPath} ${this.dim('→')} ${mount.vfsPath}${autoMountLabel}`
+				);
 			}
-			lines.push(`${this.dim('Mounting')} ${mountDesc}`);
-			lines.push(
-				`  ${this.dim(mount.hostPath)} ${this.dim('at')} ${mount.vfsPath}`
-			);
 		}
 
 		// Blueprint if specified
