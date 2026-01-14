@@ -26,6 +26,7 @@ import {
 	expandAutoMounts,
 	parseMountDirArguments,
 	parseMountWithDelimiterArguments,
+	type AutoMountResult,
 } from './mounts';
 import { startServer } from './start-server';
 import type { PlaygroundCliBlueprintV1Worker } from './blueprints-v1/worker-thread-v1';
@@ -59,11 +60,7 @@ import {
 	removeTempDirSymlink,
 } from '@php-wasm/cli-util';
 import { createHash } from 'crypto';
-import {
-	CLIOutput,
-	detectAutoMountType,
-	type AutoMountResult,
-} from './cli-output';
+import { CLIOutput } from './cli-output';
 
 // Inlined worker URLs for static analysis by downstream bundlers
 // These are replaced at build time by the Vite plugin in vite.config.ts
@@ -767,8 +764,12 @@ export async function runCLI(args: RunCLIArgs): Promise<RunCLIServer | void> {
 		RemoteAPI<PlaygroundCliWorker>
 	> = new Map();
 
+	let autoMountResult: AutoMountResult = { type: 'none' };
+
 	if (args.command === 'start') {
-		args = expandStartCommandArgs(args);
+		const result = expandStartCommandArgs(args);
+		args = result.args;
+		autoMountResult = result.autoMountResult;
 	}
 
 	if (args.autoMount !== undefined) {
@@ -778,7 +779,9 @@ export async function runCLI(args: RunCLIArgs): Promise<RunCLIServer | void> {
 			// it allows us to test the default as part of the runCLI() unit tests.
 			args = { ...args, autoMount: process.cwd() };
 		}
-		args = expandAutoMounts(args);
+		const result = expandAutoMounts(args);
+		args = result.args;
+		autoMountResult = result.autoMountResult;
 	}
 
 	if (args.wordpressInstallMode === undefined) {
@@ -816,14 +819,6 @@ export async function runCLI(args: RunCLIArgs): Promise<RunCLIServer | void> {
 	// Display banner for server commands
 	if (args.command === 'server') {
 		cliOutput.printBanner();
-
-		// Detect auto-mount result for display
-		let autoMountResult: AutoMountResult = { type: 'none' };
-		if (args.autoMount) {
-			autoMountResult = detectAutoMountType(args.autoMount, args);
-		}
-
-		// Display configuration summary
 		cliOutput.printConfig({
 			phpVersion: args.php || RecommendedPHPVersion,
 			wpVersion: args.wp || 'latest',
@@ -865,8 +860,6 @@ export async function runCLI(args: RunCLIArgs): Promise<RunCLIServer | void> {
 
 	let wordPressReady = false;
 	let isFirstRequest = true;
-
-	logger.log('Starting a PHP server...');
 
 	const server = await startServer({
 		port: selectedPort,
@@ -1186,7 +1179,6 @@ export async function runCLI(args: RunCLIArgs): Promise<RunCLIServer | void> {
 			);
 
 			cliOutput.startProgress('Starting...');
-			logger.log('Starting up workers');
 
 			try {
 				const workers = await promisedWorkers;
@@ -1212,7 +1204,6 @@ export async function runCLI(args: RunCLIArgs): Promise<RunCLIServer | void> {
 
 					await initialPlayground.isReady();
 					wordPressReady = true;
-					logger.log('Booted!');
 
 					loadBalancer = new LoadBalancer(initialPlayground);
 
@@ -1224,12 +1215,10 @@ export async function runCLI(args: RunCLIArgs): Promise<RunCLIServer | void> {
 						);
 
 						if (compiledBlueprint) {
-							logger.log('Running the Blueprint...');
 							await runBlueprintV1Steps(
 								compiledBlueprint,
 								initialPlayground as UniversalPHP
 							);
-							logger.log('Finished running the blueprint');
 						}
 					}
 
@@ -1252,8 +1241,6 @@ export async function runCLI(args: RunCLIArgs): Promise<RunCLIServer | void> {
 					await initialWorker.worker.terminate();
 					playgroundsToCleanUp.delete(initialWorker.worker);
 				}
-
-				logger.log('Preparing workers...');
 
 				// Boot additional workers using the handler
 				const initialWorkerProcessIdSpace = processIdSpaceLength;
@@ -1287,10 +1274,6 @@ export async function runCLI(args: RunCLIArgs): Promise<RunCLIServer | void> {
 
 				cliOutput.finishProgress();
 				cliOutput.printReady(serverUrl, targetWorkerCount);
-				// Also log for tests that capture logger output
-				logger.log(
-					`WordPress is running on ${serverUrl} with ${targetWorkerCount} worker(s)`
-				);
 
 				if (args.xdebug && args.experimentalDevtools) {
 					const bridge = await startBridge({
@@ -1370,17 +1353,21 @@ export async function runCLI(args: RunCLIArgs): Promise<RunCLIServer | void> {
  * (Yes, the `start` command is just a convenience wrapper to provide useful defaults
  * for the `server` command.)
  */
-function expandStartCommandArgs(
-	args: RunCLIArgs & { reset?: boolean }
-): RunCLIArgs {
+function expandStartCommandArgs(args: RunCLIArgs & { reset?: boolean }): {
+	args: RunCLIArgs;
+	autoMountResult: AutoMountResult;
+} {
 	let newArgs = { ...args, command: 'server' };
+	let autoMountResult: AutoMountResult = { type: 'none' };
 
 	/**
 	 * Enable auto-mount unless explicitly disabled
 	 */
 	if (!args.noAutoMount) {
 		newArgs.autoMount = path.resolve(process.cwd(), newArgs['path'] ?? '');
-		newArgs = expandAutoMounts(newArgs as RunCLIArgs);
+		const result = expandAutoMounts(newArgs as RunCLIArgs);
+		newArgs = result.args;
+		autoMountResult = result.autoMountResult;
 		// Delete the autoMount argument to avoid double expansion later on.
 		delete newArgs.autoMount;
 	}
@@ -1461,7 +1448,7 @@ function expandStartCommandArgs(
 		}
 	}
 
-	return newArgs as RunCLIArgs;
+	return { args: newArgs as RunCLIArgs, autoMountResult };
 }
 
 export type SpawnedWorker = {

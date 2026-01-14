@@ -9,6 +9,7 @@
  */
 
 import { shouldRenderProgress } from './utils/progress';
+import type { AutoMountResult } from './mounts';
 
 export interface CLIOutputOptions {
 	verbosity: string;
@@ -25,14 +26,6 @@ export interface ConfigSummary {
 	autoMountResult?: AutoMountResult;
 	blueprint?: string;
 }
-
-export type AutoMountResult =
-	| { type: 'plugin'; name: string; hostPath: string; vfsPath: string }
-	| { type: 'theme'; name: string; hostPath: string; vfsPath: string }
-	| { type: 'wp-content'; hostPath: string; vfsPath: string }
-	| { type: 'wordpress'; hostPath: string; vfsPath: string }
-	| { type: 'directory'; hostPath: string; vfsPath: string }
-	| { type: 'none' };
 
 /**
  * Manages CLI output with TTY-awareness and verbosity respect.
@@ -95,7 +88,7 @@ export class CLIOutput {
 	printBanner(): void {
 		if (this.isQuiet) return;
 
-		const banner = this.bold('WordPress Playground');
+		const banner = this.bold('WordPress Playground CLI');
 		this.writeStream.write(`\n${banner}\n\n`);
 	}
 
@@ -274,86 +267,4 @@ export class CLIOutput {
 
 		this.writeStream.write(`${this.yellow('Warning:')} ${message}\n`);
 	}
-}
-
-/**
- * Detect the type of directory being auto-mounted.
- */
-export function detectAutoMountType(
-	autoMountPath: string,
-	args: {
-		mount?: Array<{ hostPath: string; vfsPath: string }>;
-		'mount-before-install'?: Array<{ hostPath: string; vfsPath: string }>;
-		mode?: string;
-	}
-): AutoMountResult {
-	// Check the mounts to determine what type was detected
-	const allMounts = [
-		...(args.mount || []),
-		...(args['mount-before-install'] || []),
-	];
-
-	// Normalize paths for comparison
-	const normalizedAutoMount = autoMountPath.replace(/\/$/, '');
-
-	for (const mount of allMounts) {
-		const normalizedHostPath = mount.hostPath.replace(/\/$/, '');
-
-		// Check if this mount is related to the auto-mount path
-		if (
-			normalizedHostPath === normalizedAutoMount ||
-			normalizedHostPath.startsWith(normalizedAutoMount + '/')
-		) {
-			if (
-				mount.vfsPath.match(/^\/wordpress\/wp-content\/plugins\/[^/]+$/)
-			) {
-				const name = mount.vfsPath.split('/').pop() || '';
-				return {
-					type: 'plugin',
-					name,
-					hostPath: autoMountPath,
-					vfsPath: mount.vfsPath,
-				};
-			}
-			if (
-				mount.vfsPath.match(/^\/wordpress\/wp-content\/themes\/[^/]+$/)
-			) {
-				const name = mount.vfsPath.split('/').pop() || '';
-				return {
-					type: 'theme',
-					name,
-					hostPath: autoMountPath,
-					vfsPath: mount.vfsPath,
-				};
-			}
-			// Check for wp-content mounts (but not the nested plugins/themes)
-			if (
-				mount.vfsPath.startsWith('/wordpress/wp-content/') &&
-				!mount.vfsPath.startsWith('/wordpress/wp-content/plugins/') &&
-				!mount.vfsPath.startsWith('/wordpress/wp-content/themes/')
-			) {
-				return {
-					type: 'wp-content',
-					hostPath: autoMountPath,
-					vfsPath: '/wordpress/wp-content',
-				};
-			}
-			if (mount.vfsPath === '/wordpress') {
-				if (args.mode === 'apply-to-existing-site') {
-					return {
-						type: 'wordpress',
-						hostPath: autoMountPath,
-						vfsPath: '/wordpress',
-					};
-				}
-				return {
-					type: 'directory',
-					hostPath: autoMountPath,
-					vfsPath: '/wordpress',
-				};
-			}
-		}
-	}
-
-	return { type: 'none' };
 }

@@ -103,10 +103,21 @@ const ACTIVATE_FIRST_THEME_STEP = {
 	},
 };
 
+export type AutoMountResult =
+	| { type: 'plugin'; name: string; hostPath: string; vfsPath: string }
+	| { type: 'theme'; name: string; hostPath: string; vfsPath: string }
+	| { type: 'wp-content'; hostPath: string; vfsPath: string }
+	| { type: 'wordpress'; hostPath: string; vfsPath: string }
+	| { type: 'directory'; hostPath: string; vfsPath: string }
+	| { type: 'none' };
+
 /**
  * Auto-mounts resolution logic:
  */
-export function expandAutoMounts(args: RunCLIArgs): RunCLIArgs {
+export function expandAutoMounts(args: RunCLIArgs): {
+	args: RunCLIArgs;
+	autoMountResult: AutoMountResult;
+} {
 	const path = args.autoMount!;
 
 	const mount = [...(args.mount || [])];
@@ -121,21 +132,31 @@ export function expandAutoMounts(args: RunCLIArgs): RunCLIArgs {
 		],
 	};
 
+	let autoMountResult: AutoMountResult = { type: 'none' };
+
 	if (isPluginDirectory(path)) {
 		const pluginName = basename(path);
+		const vfsPath = `/wordpress/wp-content/plugins/${pluginName}`;
 		mount.push({
 			hostPath: path,
-			vfsPath: `/wordpress/wp-content/plugins/${pluginName}`,
+			vfsPath,
 		});
 		newArgs['additional-blueprint-steps'].push({
 			step: 'activatePlugin',
 			pluginPath: `/wordpress/wp-content/plugins/${basename(path)}`,
 		});
+		autoMountResult = {
+			type: 'plugin',
+			name: pluginName,
+			hostPath: path,
+			vfsPath,
+		};
 	} else if (isThemeDirectory(path)) {
 		const themeName = basename(path);
+		const vfsPath = `/wordpress/wp-content/themes/${themeName}`;
 		mount.push({
 			hostPath: path,
-			vfsPath: `/wordpress/wp-content/themes/${themeName}`,
+			vfsPath,
 		});
 		newArgs['additional-blueprint-steps'].push(
 			args['experimental-blueprints-v2-runner']
@@ -148,6 +169,12 @@ export function expandAutoMounts(args: RunCLIArgs): RunCLIArgs {
 						themeFolderName: themeName,
 					}
 		);
+		autoMountResult = {
+			type: 'theme',
+			name: themeName,
+			hostPath: path,
+			vfsPath,
+		};
 	} else if (containsWpContentDirectories(path)) {
 		/**
 		 * Mount each wp-content file and directory individually.
@@ -168,6 +195,11 @@ export function expandAutoMounts(args: RunCLIArgs): RunCLIArgs {
 			});
 		}
 		newArgs['additional-blueprint-steps'].push(ACTIVATE_FIRST_THEME_STEP);
+		autoMountResult = {
+			type: 'wp-content',
+			hostPath: path,
+			vfsPath: '/wordpress/wp-content',
+		};
 	} else if (containsFullWordPressInstallation(path)) {
 		mountBeforeInstall.push({ hostPath: path, vfsPath: '/wordpress' });
 		// @TODO: If overriding another mode, throw an error or print a warning.
@@ -177,9 +209,14 @@ export function expandAutoMounts(args: RunCLIArgs): RunCLIArgs {
 			newArgs.wordpressInstallMode =
 				'install-from-existing-files-if-needed';
 		}
+		autoMountResult = {
+			type: 'wordpress',
+			hostPath: path,
+			vfsPath: '/wordpress',
+		};
 	}
 
-	return newArgs as RunCLIArgs;
+	return { args: newArgs as RunCLIArgs, autoMountResult };
 }
 
 export function containsFullWordPressInstallation(path: string): boolean {

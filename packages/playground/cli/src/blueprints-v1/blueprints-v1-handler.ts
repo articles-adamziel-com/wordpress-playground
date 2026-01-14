@@ -103,7 +103,7 @@ export class BlueprintsV1Handler {
 						`${wpDetails.version}.zip`,
 						monitor
 					);
-			logger.log(
+			logger.debug(
 				`Resolved WordPress release URL: ${wpDetails?.releaseUrl}`
 			);
 		}
@@ -114,7 +114,6 @@ export class BlueprintsV1Handler {
 			sqliteIntegrationPluginZip = undefined;
 		} else {
 			this.cliOutput.updateProgress('Preparing SQLite database');
-			logger.log('Fetching SQLite integration plugin...');
 			sqliteIntegrationPluginZip = await fetchSqliteIntegration(monitor);
 		}
 
@@ -130,7 +129,6 @@ export class BlueprintsV1Handler {
 		await playground.isConnected();
 
 		this.cliOutput.updateProgress('Booting WordPress');
-		logger.log('Booting WordPress...');
 
 		const runtimeConfiguration = await resolveRuntimeConfiguration(
 			this.getEffectiveBlueprint()
