@@ -1,34 +1,39 @@
 /**
- * CLI Output Formatter
+ * Manages formatted terminal output for the WordPress Playground CLI.
  *
- * Provides a clean, informative CLI output experience with:
- * - TTY-aware formatting (colors, in-place updates)
- * - Banner and configuration display
- * - Progress tracking on a single line
- * - Respect for verbosity settings
+ * This class handles two distinct output modes:
+ * - TTY (terminal): Uses ANSI escape codes for colors and in-place progress updates
+ * - Non-TTY (pipes/logs): Skips progress updates entirely, outputs plain text only
+ *
+ * Progress updates rewrite the same line in TTY mode to create smooth animations.
+ * When output is piped or redirected, progress is suppressed to avoid cluttering
+ * logs with intermediate states - only the final "Ready!" message appears.
  */
 
 import { shouldRenderProgress } from './utils/progress';
 import type { Mount } from '@php-wasm/cli-util';
 
 export interface CLIOutputOptions {
+	/** Verbosity level: 'quiet', 'normal', or 'debug' */
 	verbosity: string;
+	/** Output stream to write to. Defaults to process.stdout */
 	writeStream?: NodeJS.WriteStream;
 }
 
+/**
+ * Configuration details displayed at CLI startup.
+ */
 export interface ConfigSummary {
 	phpVersion: string;
 	wpVersion: string;
 	port: number;
 	xdebug: boolean;
 	intl: boolean;
+	/** All mounts (both manual and auto-detected). Auto-mounts have autoMounted: true */
 	mounts: Mount[];
 	blueprint?: string;
 }
 
-/**
- * Manages CLI output with TTY-awareness and verbosity respect.
- */
 export class CLIOutput {
 	private verbosity: string;
 	private writeStream: NodeJS.WriteStream;
@@ -44,6 +49,12 @@ export class CLIOutput {
 		return Boolean(this.writeStream.isTTY);
 	}
 
+	/**
+	 * Determines if progress updates should be rendered.
+	 *
+	 * Returns false when output is piped, redirected, or in CI environments.
+	 * This prevents progress spam in logs - users only see the final outcome.
+	 */
 	get shouldRender(): boolean {
 		return shouldRenderProgress(this.writeStream);
 	}
@@ -52,7 +63,13 @@ export class CLIOutput {
 		return this.verbosity === 'quiet';
 	}
 
-	// ANSI formatting helpers - only apply when TTY
+	/**
+	 * ANSI formatting helpers.
+	 *
+	 * These only apply color codes when outputting to a terminal (TTY).
+	 * When piped to files or non-TTY streams, they return plain text to
+	 * avoid polluting logs with escape sequences.
+	 */
 	private bold(text: string): string {
 		return this.isTTY ? `\x1b[1m${text}\x1b[0m` : text;
 	}
@@ -77,9 +94,6 @@ export class CLIOutput {
 		return this.isTTY ? `\x1b[31m${text}\x1b[0m` : text;
 	}
 
-	/**
-	 * Display the WordPress Playground CLI banner.
-	 */
 	printBanner(): void {
 		if (this.isQuiet) return;
 
@@ -88,7 +102,11 @@ export class CLIOutput {
 	}
 
 	/**
-	 * Display the configuration summary.
+	 * Prints the configuration summary before starting the server.
+	 *
+	 * Displays PHP/WordPress versions, enabled extensions, all mounts
+	 * (with auto-mounts labeled), and any loaded blueprint. This gives
+	 * users a clear view of what's configured before the server boots.
 	 */
 	printConfig(config: ConfigSummary): void {
 		if (this.isQuiet) return;
@@ -129,8 +147,10 @@ export class CLIOutput {
 	}
 
 	/**
-	 * Start a progress indicator.
-	 * In TTY mode, this will be updated in-place on the same line.
+	 * Starts a progress indicator that updates in-place.
+	 *
+	 * Subsequent updateProgress() calls rewrite the same line in TTY mode.
+	 * When output is piped or redirected, progress is completely skipped.
 	 */
 	startProgress(message: string): void {
 		if (this.isQuiet) return;
@@ -141,8 +161,11 @@ export class CLIOutput {
 	}
 
 	/**
-	 * Update the current progress message.
-	 * In TTY mode, this updates the same line.
+	 * Updates the current progress message and optional percentage.
+	 *
+	 * Rewrites the current line using ANSI cursor control in TTY mode.
+	 * Identical messages are skipped to prevent flickering. When piped,
+	 * this method does nothing (early return via shouldRender check).
 	 */
 	updateProgress(message: string, percent?: number): void {
 		if (this.isQuiet) return;
@@ -156,22 +179,28 @@ export class CLIOutput {
 			fullMessage = `${message} ${this.dim(`${percent}%`)}`;
 		}
 
+		// Skip identical messages to prevent flickering
 		if (fullMessage === this.lastProgressLine) {
-			return; // Avoid flickering by not rewriting identical content
+			return;
 		}
 		this.lastProgressLine = fullMessage;
 
 		if (this.isTTY) {
+			// Rewrite the current line
 			this.writeStream.cursorTo(0);
 			this.writeStream.write(fullMessage);
 			this.writeStream.clearLine(1);
 		} else {
+			// Fallback: print on new line if somehow rendered in non-TTY
 			this.writeStream.write(`${fullMessage}\n`);
 		}
 	}
 
 	/**
-	 * Complete the current progress and move to the next line.
+	 * Completes the progress indicator and moves to a new line.
+	 *
+	 * Optionally displays a final message before finishing. In TTY mode,
+	 * this ensures the cursor moves to the next line after the progress.
 	 */
 	finishProgress(finalMessage?: string): void {
 		if (this.isQuiet) return;
@@ -196,12 +225,15 @@ export class CLIOutput {
 	}
 
 	/**
-	 * Print a status line (not a progress update).
+	 * Prints a status message, interrupting any active progress.
+	 *
+	 * Unlike progress updates, status messages are always printed on their
+	 * own line. Any active progress indicator is cleared before the message.
 	 */
 	printStatus(message: string): void {
 		if (this.isQuiet) return;
 
-		// If we have an active progress line, clear it first
+		// Clear any active progress line before printing status
 		if (this.progressActive && this.isTTY) {
 			this.writeStream.cursorTo(0);
 			this.writeStream.clearLine(0);
@@ -213,7 +245,10 @@ export class CLIOutput {
 	}
 
 	/**
-	 * Print an error message (always shown, even in quiet mode).
+	 * Prints an error message.
+	 *
+	 * Errors are always shown, even in quiet mode, and interrupt any
+	 * active progress display to ensure visibility.
 	 */
 	printError(message: string): void {
 		// Clear any active progress first
@@ -227,8 +262,10 @@ export class CLIOutput {
 	}
 
 	/**
-	 * Print the final "ready" message with the server URL.
-	 * Note: The string "WordPress is running on" is required for CI tests.
+	 * Prints the final "server ready" message with the URL.
+	 *
+	 * Note: The exact wording "WordPress is running on" is checked by
+	 * CI tests, so changes to this string will break test assertions.
 	 */
 	printReady(url: string, workerCount: number): void {
 		if (this.isQuiet) return;
@@ -239,9 +276,6 @@ export class CLIOutput {
 		);
 	}
 
-	/**
-	 * Print a warning message.
-	 */
 	printWarning(message: string): void {
 		if (this.isQuiet) return;
 
