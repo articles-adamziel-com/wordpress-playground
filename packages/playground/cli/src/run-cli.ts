@@ -264,6 +264,11 @@ export async function parseOptionsAndRunCLI(argsToParse: string[]) {
 				type: 'boolean',
 				default: true,
 			},
+			redis: {
+				describe: 'Enable Redis (requires JSPI support).',
+				type: 'boolean',
+				// No default - will be determined at runtime based on JSPI availability
+			},
 			xdebug: {
 				describe: 'Enable Xdebug.',
 				type: 'boolean',
@@ -727,6 +732,7 @@ export interface RunCLIArgs {
 	internalCookieStore?: boolean;
 	'additional-blueprint-steps'?: any[];
 	intl?: boolean;
+	redis?: boolean;
 	xdebug?: boolean | { ideKey?: string };
 	experimentalUnsafeIdeIntegration?: string[];
 	experimentalDevtools?: boolean;
@@ -875,6 +881,12 @@ export async function runCLI(args: RunCLIArgs): Promise<RunCLIServer | void> {
 		args.intl = true;
 	}
 
+	// Enable Redis dynamic extension by default only when JSPI is available.
+	// Redis requires JSPI for proper exception handling during network operations.
+	if (args.redis === undefined) {
+		args.redis = await jspi();
+	}
+
 	// Create CLI output handler
 	const cliOutput = new CLIOutput({
 		verbosity: args.verbosity || 'normal',
@@ -889,6 +901,7 @@ export async function runCLI(args: RunCLIArgs): Promise<RunCLIServer | void> {
 			port: (args['port'] as number) || 9400,
 			xdebug: !!args.xdebug,
 			intl: !!args.intl,
+			redis: !!args.redis,
 			mounts: [
 				...(args.mount || []),
 				...(args['mount-before-install'] || []),
