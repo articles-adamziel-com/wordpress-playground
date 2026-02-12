@@ -4,6 +4,19 @@ All notable changes to this project are documented in this file by a CI job
 that runs on every NPM release. The file follows the [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 format.
 
+## [v3.0.50] (2026-02-12) 
+
+### PHP WebAssembly
+
+- Upgrade nx 19 → 21 and lerna 7 → 9 to fix publish. ([#3262](https://github.com/WordPress/wordpress-playground/pull/3262))
+
+### Contributors
+
+The following contributors merged PRs in this release:
+
+@adamziel
+
+
 ## [v3.0.49] (2026-02-12) 
 
 ### Various
