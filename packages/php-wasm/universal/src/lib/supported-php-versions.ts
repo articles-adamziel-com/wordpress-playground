@@ -10,3 +10,6 @@ export const SupportedPHPVersions = [
 export const LatestSupportedPHPVersion = SupportedPHPVersions[0];
 export const SupportedPHPVersionsList = SupportedPHPVersions as any as string[];
 export type SupportedPHPVersion = (typeof SupportedPHPVersions)[number];
+
+export const LegacyPHPVersions = ['5.6'] as const;
+export type LegacyPHPVersion = (typeof LegacyPHPVersions)[number];

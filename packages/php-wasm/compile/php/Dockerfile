@@ -289,14 +289,16 @@ RUN cd /root && \
 	git apply --no-index /root/php${PHP_VERSION:0:3}*.patch -v && \
 	chmod +x /root/apply-mysqlnd-patch.sh && \
 	/root/apply-mysqlnd-patch.sh && \
-	if [[ "${PHP_VERSION:0:3}" < '8.3' ]]; then \
-		git apply --no-index /root/php-chunk-alloc-zend-assert-up-to-8.2.patch -v; \
-	elif [[ "${PHP_VERSION:0:3}" == '8.3' ]]; then \
-		git apply --no-index /root/php-chunk-alloc-zend-assert-8.3.patch -v; \
-	elif [[ "${PHP_VERSION:0:3}" == '8.4' ]]; then \
-		git apply --no-index /root/php-chunk-alloc-zend-assert-8.4.patch -v; \
-	elif [[ "${PHP_VERSION:0:3}" == '8.5' ]]; then \
-		git apply --no-index /root/php-chunk-alloc-zend-assert-8.5.patch -v; \
+	if [[ "${PHP_VERSION:0:1}" -ge "7" ]]; then \
+		if [[ "${PHP_VERSION:0:3}" < '8.3' ]]; then \
+			git apply --no-index /root/php-chunk-alloc-zend-assert-up-to-8.2.patch -v; \
+		elif [[ "${PHP_VERSION:0:3}" == '8.3' ]]; then \
+			git apply --no-index /root/php-chunk-alloc-zend-assert-8.3.patch -v; \
+		elif [[ "${PHP_VERSION:0:3}" == '8.4' ]]; then \
+			git apply --no-index /root/php-chunk-alloc-zend-assert-8.4.patch -v; \
+		elif [[ "${PHP_VERSION:0:3}" == '8.5' ]]; then \
+			git apply --no-index /root/php-chunk-alloc-zend-assert-8.5.patch -v; \
+		fi; \
 	fi && \
 	touch php-src/patched
 
@@ -308,7 +310,9 @@ RUN if [ "$WITH_MYSQL" = "yes" ]; then \
 
 # Download and prepare imagick extension if needed (PHP 7.4+)
 # Use version 3.7.0 for PHP 7.x, master for PHP 8.x
-RUN 	if [ "${PHP_VERSION:0:1}" -eq "7" ]; then \
+# Skip entirely for PHP 5.x (imagick 3.7+ requires PHP 7+)
+RUN if [ "${PHP_VERSION:0:1}" -ge "7" ]; then \
+		if [ "${PHP_VERSION:0:1}" -eq "7" ]; then \
 			IMAGICK_BRANCH="3.7.0"; \
 		else \
 			IMAGICK_BRANCH="master"; \
@@ -330,12 +334,21 @@ RUN 	if [ "${PHP_VERSION:0:1}" -eq "7" ]; then \
 			./buildconf --force; \
 		fi && \
 		echo -n ' --with-imagick=/root/lib --with-imagick-config=/root/lib/bin/wasm32-unknown-emscripten-MagickWand-config ' >> /root/.php-configure-flags && \
-		echo -n ' /root/lib/lib/libMagickWand-7.Q16HDRI.a /root/lib/lib/libMagickCore-7.Q16HDRI.a ' >> /root/.emcc-php-wasm-sources
+		echo -n ' /root/lib/lib/libMagickWand-7.Q16HDRI.a /root/lib/lib/libMagickCore-7.Q16HDRI.a ' >> /root/.emcc-php-wasm-sources; \
+	fi
 
 # Disable phar.php generation for all builds (WASM binaries can't execute during build)
 # This must run after buildconf but before configure
 RUN /root/replace.sh 's/pharcmd=pharcmd/pharcmd=/g' /root/php-src/configure && \
 	/root/replace.sh 's/pharcmd_install=install-pharcmd/pharcmd_install=/g' /root/php-src/configure
+
+# Fibers are a PHP 8.1+ feature. They are compiled as a custom assembly
+# implementation by default. However, that implementation does not work with
+# emscripten. The line below disables it for PHP 8.1+.
+# See https://github.com/WordPress/wordpress-playground/issues/92
+RUN if [[ "${PHP_VERSION:0:1}" -gt "8" || ( "${PHP_VERSION:0:1}" -eq "8" && "${PHP_VERSION:2:1}" -ge "1" ) ]]; then \
+		echo -n ' --disable-fiber-asm ' >> /root/.php-configure-flags; \
+	fi
 
 # Build the patched PHP
 WORKDIR /root/php-src
@@ -356,16 +369,8 @@ RUN source /root/emsdk/emsdk_env.sh && \
 	PKG_CONFIG_PATH="/root/lib/lib/pkgconfig:${PKG_CONFIG_PATH}" \
 		emconfigure ./configure \
 		PKG_CONFIG_PATH=$PKG_CONFIG_PATH \
-	# Fibers are a PHP 8.1+ feature. They are compiled as
-	# a custom assembly implementation by default. However,
-	# that implementation does not work with emscripten.
+	# --disable-fiber-asm is added via .php-configure-flags for PHP 8.1+ only
 	#
-	# The line below disables it, forcing PHP to use the
-	# C implementation instead.
-	#
-	# See https://github.com/WordPress/wordpress-playground/issues/92
-	# for more context.
-	--disable-fiber-asm \
 	--enable-phar \
 	# --enable-json for PHP < 8.0:
 	--enable-json      \
@@ -431,10 +436,17 @@ fi;
 RUN echo '#undef HAVE_ASM_GOTO' >> /root/php-src/main/php_config.h;
 RUN echo '#define HAVE_ASM_GOTO 0' >> /root/php-src/main/php_config.h;
 # Disable asm arithmetic.
-RUN /root/replace.sh 's/ZEND_USE_ASM_ARITHMETIC 1/ZEND_USE_ASM_ARITHMETIC 0/g' /root/php-src/Zend/zend_operators.h;
-RUN /root/replace.sh 's/defined\(__GNUC__\)/0/g' /root/php-src/Zend/zend_multiply.h
-RUN /root/replace.sh 's/defined\(__GNUC__\)/0/g' /root/php-src/Zend/zend_cpuinfo.c
-RUN /root/replace.sh 's/defined\(__clang__\)/0/g' /root/php-src/Zend/zend_cpuinfo.c
+# ZEND_USE_ASM_ARITHMETIC was introduced in PHP 7.x, zend_cpuinfo.c in PHP 7.1
+RUN if [ -f /root/php-src/Zend/zend_operators.h ] && grep -q 'ZEND_USE_ASM_ARITHMETIC' /root/php-src/Zend/zend_operators.h; then \
+		/root/replace.sh 's/ZEND_USE_ASM_ARITHMETIC 1/ZEND_USE_ASM_ARITHMETIC 0/g' /root/php-src/Zend/zend_operators.h; \
+	fi
+RUN if [ -f /root/php-src/Zend/zend_multiply.h ]; then \
+		/root/replace.sh 's/defined\(__GNUC__\)/0/g' /root/php-src/Zend/zend_multiply.h; \
+	fi
+RUN if [ -f /root/php-src/Zend/zend_cpuinfo.c ]; then \
+		/root/replace.sh 's/defined\(__GNUC__\)/0/g' /root/php-src/Zend/zend_cpuinfo.c; \
+		/root/replace.sh 's/defined\(__clang__\)/0/g' /root/php-src/Zend/zend_cpuinfo.c; \
+	fi
 # }}}
 
 # With HAVE_UNISTD_H=1 PHP complains about the missing getdtablesize() function
@@ -461,8 +473,11 @@ RUN /root/replace.sh 's/#define VCWD_POPEN.+/#define VCWD_POPEN(command, type) w
 RUN echo 'extern FILE *wasm_popen(const char *cmd, const char *mode);' >> /root/php-src/Zend/zend_virtual_cwd.h
 
 # Provide a custom implementation of the shutdown() function.
-RUN perl -pi.bak -e $'s/(\s+)shutdown\(/$1 wasm_shutdown(/g' /root/php-src/sapi/cli/php_cli_server.c
-RUN perl -pi.bak -e $'s/(\s+)closesocket\(/$1 wasm_close(/g' /root/php-src/sapi/cli/php_cli_server.c
+# php_cli_server.c exists in PHP 5.4+ (built-in server added in 5.4)
+RUN if [ -f /root/php-src/sapi/cli/php_cli_server.c ]; then \
+		perl -pi.bak -e $'s/(\\s+)shutdown\\(/$1 wasm_shutdown(/g' /root/php-src/sapi/cli/php_cli_server.c; \
+		perl -pi.bak -e $'s/(\\s+)closesocket\\(/$1 wasm_close(/g' /root/php-src/sapi/cli/php_cli_server.c; \
+	fi
 
 # Provide custom implementation fo the shutdown() function.
 # This is used by intl ( which links C++ code ) and need C linkage.

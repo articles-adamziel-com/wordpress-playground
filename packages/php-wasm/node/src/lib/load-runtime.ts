@@ -1,4 +1,5 @@
 import type {
+	LegacyPHPVersion,
 	SupportedPHPVersion,
 	EmscriptenOptions,
 	PHPRuntime,
@@ -87,7 +88,7 @@ export type PHPLoaderOptionsForNode = PHPLoaderOptions & {
  * @see load
  */
 export async function loadNodeRuntime(
-	phpVersion: SupportedPHPVersion,
+	phpVersion: SupportedPHPVersion | LegacyPHPVersion,
 	options: PHPLoaderOptionsForNode = {}
 ) {
 	// TODO: Throw an error if a file lock manager is provided but not a process ID.
@@ -233,24 +234,29 @@ export async function loadNodeRuntime(
 		},
 	};
 
+	// Extensions are only available for modern PHP versions.
+	const modernVersion = phpVersion as SupportedPHPVersion;
 	if (options?.withXdebug === true) {
 		emscriptenOptions = await withXdebug(
-			phpVersion,
+			modernVersion,
 			emscriptenOptions,
 			options.xdebug
 		);
 	}
 
 	if (options?.withIntl === true) {
-		emscriptenOptions = await withIntl(phpVersion, emscriptenOptions);
+		emscriptenOptions = await withIntl(modernVersion, emscriptenOptions);
 	}
 
 	if (options?.withRedis === true) {
-		emscriptenOptions = await withRedis(phpVersion, emscriptenOptions);
+		emscriptenOptions = await withRedis(modernVersion, emscriptenOptions);
 	}
 
 	if (options?.withMemcached === true) {
-		emscriptenOptions = await withMemcached(phpVersion, emscriptenOptions);
+		emscriptenOptions = await withMemcached(
+			modernVersion,
+			emscriptenOptions
+		);
 	}
 
 	emscriptenOptions = await withNetworking(emscriptenOptions);

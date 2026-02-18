@@ -366,6 +366,14 @@
 				"testNamePattern": "Memcached Network Integration"
 			}
 		},
+		"test-legacy-php": {
+			"executor": "@nx/vitest:test",
+			"outputs": ["{workspaceRoot}/coverage/packages/php-wasm/node"],
+			"options": {
+				"reportsDirectory": "../../../coverage/packages/php-wasm/node",
+				"testFiles": ["legacy-php-versions.spec.ts"]
+			}
+		},
 		"lint": {
 			"executor": "@nx/eslint:lint",
 			"outputs": ["{options.outputFile}"],
