@@ -4,6 +4,19 @@ All notable changes to this project are documented in this file by a CI job
 that runs on every NPM release. The file follows the [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 format.
 
+## [v3.1.1] (2026-02-18) 
+
+### Bug Fixes
+
+- [CLI] Eliminate duplicate Playground CLI Ready message. ([#3288](https://github.com/WordPress/wordpress-playground/pull/3288))
+
+### Contributors
+
+The following contributors merged PRs in this release:
+
+@brandonpayton
+
+
 ## [v3.1.0] (2026-02-18) 
 
 ### Bug Fixes
