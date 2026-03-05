@@ -137,6 +137,19 @@ function createTestApp(): Express {
 		});
 	});
 
+	app.post('/upload', (req, res) => {
+		const chunks: Buffer[] = [];
+		req.on('data', (chunk: Buffer) => chunks.push(chunk));
+		req.on('end', () => {
+			const body = Buffer.concat(chunks).toString('utf-8');
+			res.json({
+				contentType: req.headers['content-type'] || '',
+				bodyLength: body.length,
+				body,
+			});
+		});
+	});
+
 	app.get('/error', (req, res) => {
 		res.status(500).send('Internal Server Error');
 	});
@@ -404,6 +417,74 @@ describe('TCPOverFetchWebsocket over HTTP', () => {
 		await reader.read(); // Skip the final empty chunk
 		const responseBodyPart4 = await reader.read();
 		expect(responseBodyPart4.done).toBe(true);
+	});
+
+	it('should handle a multipart/form-data POST request', async () => {
+		const boundary = '----curlTestBoundary123';
+		const fileContent = 'Hello from CURLFile upload test!';
+		const body = [
+			`--${boundary}\r\n`,
+			`Content-Disposition: form-data; name="field1"\r\n\r\n`,
+			`value1\r\n`,
+			`--${boundary}\r\n`,
+			`Content-Disposition: form-data; name="myfile"; filename="test.txt"\r\n`,
+			`Content-Type: text/plain\r\n\r\n`,
+			`${fileContent}\r\n`,
+			`--${boundary}--\r\n`,
+		].join('');
+
+		const socket = await makeRequest({
+			host,
+			port,
+			path: '/upload',
+			method: 'POST',
+			body,
+			additionalHeaders: `Content-Type: multipart/form-data; boundary=${boundary}\r\n`,
+			outputType: 'stream',
+		});
+		const response = await bufferResponse(socket);
+		expect(response).toContain('HTTP/1.1 200 OK');
+		expect(response).toContain(fileContent);
+		expect(response).toContain('multipart/form-data');
+	});
+
+	it('should handle a multipart POST with Expect: 100-continue (delayed body)', async () => {
+		const boundary = '----curlTestBoundary456';
+		const fileContent = 'File content sent after Expect delay';
+		const body = [
+			`--${boundary}\r\n`,
+			`Content-Disposition: form-data; name="file"; filename="delayed.txt"\r\n`,
+			`Content-Type: text/plain\r\n\r\n`,
+			`${fileContent}\r\n`,
+			`--${boundary}--\r\n`,
+		].join('');
+
+		const contentType = `multipart/form-data; boundary=${boundary}`;
+		const headers =
+			`POST /upload HTTP/1.1\r\n` +
+			`Host: ${host}:${port}\r\n` +
+			`Content-Type: ${contentType}\r\n` +
+			`Content-Length: ${body.length}\r\n` +
+			`Expect: 100-continue\r\n` +
+			`\r\n`;
+
+		const socket = new TCPOverFetchWebsocket(
+			`ws://playground.internal/?host=${host}&port=${port}`,
+			[],
+			{ outputType: 'stream' }
+		);
+
+		// Send headers first (simulating curl Expect: 100-continue)
+		socket.send(new TextEncoder().encode(headers));
+
+		// Simulate the 100-continue delay: send body after short delay
+		await new Promise((resolve) => setTimeout(resolve, 100));
+		socket.send(new TextEncoder().encode(body));
+
+		const response = await bufferResponse(socket);
+		expect(response).toContain('HTTP/1.1 200 OK');
+		expect(response).toContain(fileContent);
+		expect(response).toContain('multipart/form-data');
 	});
 
 	it('should handle a non-existent endpoint', async () => {

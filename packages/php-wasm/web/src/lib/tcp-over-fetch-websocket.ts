@@ -708,9 +708,20 @@ export class RawBytesFetch {
 			if (line === '') {
 				break;
 			}
-			const [name, value] = line.split(': ');
+			const colonIndex = line.indexOf(': ');
+			if (colonIndex === -1) {
+				continue;
+			}
+			const name = line.slice(0, colonIndex);
+			const value = line.slice(colonIndex + 2);
 			headers.set(name, value);
 		}
+
+		// Strip the Expect header. PHP's curl sends
+		// "Expect: 100-continue" for POST bodies > 1024 bytes
+		// (e.g. CURLFile uploads). The fetch() API does not
+		// support this header and will reject the request.
+		headers.delete('Expect');
 
 		return { method, path, headers };
 	}
