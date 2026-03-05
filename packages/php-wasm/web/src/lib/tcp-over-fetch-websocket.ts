@@ -708,13 +708,15 @@ export class RawBytesFetch {
 			if (line === '') {
 				break;
 			}
-			const colonIndex = line.indexOf(': ');
+			const colonIndex = line.indexOf(':');
 			if (colonIndex === -1) {
 				continue;
 			}
-			const name = line.slice(0, colonIndex);
-			const value = line.slice(colonIndex + 2);
-			headers.set(name, value);
+			const name = line.slice(0, colonIndex).trim();
+			const value = line.slice(colonIndex + 1).trimStart();
+			if (name !== '') {
+				headers.set(name, value);
+			}
 		}
 
 		// Strip the Expect header. PHP's curl sends
