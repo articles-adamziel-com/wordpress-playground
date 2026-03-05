@@ -282,6 +282,20 @@ if ($requestMethod !== 'GET' && $requestMethod !== 'HEAD' && $requestMethod !== 
         }
         curl_setopt($ch, CURLOPT_POST, true);
         curl_setopt($ch, CURLOPT_POSTFIELDS, $postFields);
+        // Strip the incoming Content-Type and Content-Length headers.
+        // CURLOPT_POSTFIELDS with an array generates a new multipart
+        // boundary, and we must let PHP curl set its own Content-Type
+        // to match. The original Content-Type from the browser has a
+        // different boundary that doesn't match the reconstructed body.
+        $filteredHeaders = array_values(array_filter(
+            $curlHeaders,
+            fn($h) => stripos($h, 'Content-Type:') !== 0
+                   && stripos($h, 'Content-Length:') !== 0
+        ));
+        curl_setopt($ch, CURLOPT_HTTPHEADER, array_merge(
+            $filteredHeaders,
+            ["Host: $host"],
+        ));
     } else {
         $input = fopen('php://input', 'r');
         curl_setopt($ch, CURLOPT_UPLOAD, true);
