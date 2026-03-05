@@ -324,11 +324,26 @@ export class TCPOverFetchWebsocket {
 		]);
 
 		// Connect the TLS server end to the fetch() request
-		const request = await RawBytesFetch.parseHttpRequest(
-			tlsConnection.serverEnd.upstream.readable,
-			this.host,
-			'https'
-		);
+		const { request, expectsContinue } =
+			await RawBytesFetch.parseHttpRequest(
+				tlsConnection.serverEnd.upstream.readable,
+				this.host,
+				'https'
+			);
+		// When PHP's curl sends "Expect: 100-continue" (e.g. for CurlFile
+		// uploads with bodies > 1024 bytes), it pauses after sending the
+		// headers and waits for a "100 Continue" response before sending
+		// the body. We must send that response back through the TLS tunnel
+		// to unblock curl, otherwise the body stream will never arrive
+		// and we'll deadlock.
+		if (expectsContinue) {
+			const writer =
+				tlsConnection.serverEnd.downstream.writable.getWriter();
+			await writer.write(
+				new TextEncoder().encode('HTTP/1.1 100 Continue\r\n\r\n')
+			);
+			writer.releaseLock();
+		}
 		try {
 			await RawBytesFetch.fetchRawResponseBytes(
 				request,
@@ -345,11 +360,24 @@ export class TCPOverFetchWebsocket {
 
 	async fetchOverHTTP() {
 		// Connect this WebSocket's client end to the fetch() request
-		const request = await RawBytesFetch.parseHttpRequest(
-			this.clientUpstream.readable,
-			this.host,
-			'http'
-		);
+		const { request, expectsContinue } =
+			await RawBytesFetch.parseHttpRequest(
+				this.clientUpstream.readable,
+				this.host,
+				'http'
+			);
+		// When PHP's curl sends "Expect: 100-continue" (e.g. for CurlFile
+		// uploads with bodies > 1024 bytes), it pauses after sending the
+		// headers and waits for a "100 Continue" response before sending
+		// the body. We must send that response back to unblock curl,
+		// otherwise the body stream will never arrive and we'll deadlock.
+		if (expectsContinue) {
+			const writer = this.clientDownstream.writable.getWriter();
+			await writer.write(
+				new TextEncoder().encode('HTTP/1.1 100 Continue\r\n\r\n')
+			);
+			writer.releaseLock();
+		}
 		try {
 			await RawBytesFetch.fetchRawResponseBytes(
 				request,
@@ -614,7 +642,17 @@ export class RawBytesFetch {
 					if (bodyBytes.length > 0) {
 						controller.enqueue(bodyBytes);
 					}
-					if (requestDataExhausted) {
+					// Close the stream immediately if we already have the
+					// full body. This happens when curl sends the headers
+					// and body together (small bodies without Expect:
+					// 100-continue). Without this check, pull() would
+					// block forever waiting for upstream data that will
+					// never arrive.
+					const bodyAlreadyComplete =
+						terminationMode === 'content-length' &&
+						contentLength !== undefined &&
+						seenBytes >= contentLength;
+					if (requestDataExhausted || bodyAlreadyComplete) {
 						controller.close();
 					}
 				},
@@ -687,7 +725,7 @@ export class RawBytesFetch {
 		const hostname = parsedHeaders.headers.get('Host') ?? host;
 		const url = new URL(parsedHeaders.path, protocol + '://' + hostname);
 
-		return new Request(url.toString(), {
+		const request = new Request(url.toString(), {
 			method: parsedHeaders.method,
 			headers: parsedHeaders.headers,
 			body: outboundBodyStream,
@@ -696,6 +734,7 @@ export class RawBytesFetch {
 			// @ts-expect-error
 			duplex: 'half',
 		});
+		return { request, expectsContinue: parsedHeaders.expectsContinue };
 	}
 
 	private static parseRequestHeaders(httpRequestBytes: Uint8Array) {
@@ -723,9 +762,11 @@ export class RawBytesFetch {
 		// "Expect: 100-continue" for POST bodies > 1024 bytes
 		// (e.g. CURLFile uploads). The fetch() API does not
 		// support this header and will reject the request.
+		const expectsContinue =
+			headers.get('Expect')?.toLowerCase() === '100-continue';
 		headers.delete('Expect');
 
-		return { method, path, headers };
+		return { method, path, headers, expectsContinue };
 	}
 }
 

@@ -210,6 +210,10 @@ curl_setopt(
             return $len;
         }
 
+        if(in_array($name, ['strict-transport-security', 'content-security-policy', 'upgrade-insecure-requests'], true)) {
+            return $len;
+        }
+
         if ($name === 'transfer-encoding' && stripos($value, 'chunked') !== false) {
             $is_chunked_response = true;
             header($header, false);
@@ -261,10 +265,29 @@ $requestMethod = $_SERVER['REQUEST_METHOD'];
 curl_setopt($ch, CURLOPT_CUSTOMREQUEST, $requestMethod);
 
 if ($requestMethod !== 'GET' && $requestMethod !== 'HEAD' && $requestMethod !== 'OPTIONS') {
-    $input = fopen('php://input', 'r');
-    curl_setopt($ch, CURLOPT_UPLOAD, true);
-    curl_setopt($ch, CURLOPT_INFILE, $input);
-    curl_setopt($ch, CURLOPT_INFILESIZE, $_SERVER['CONTENT_LENGTH']);
+    // php://input is not available for multipart/form-data requests
+    // because PHP parses the body into $_POST and $_FILES, consuming
+    // the input stream. For such requests, we reconstruct the body
+    // using CURLOPT_POSTFIELDS with CURLFile objects for any uploaded
+    // files.
+    $contentType = $_SERVER['CONTENT_TYPE'] ?? '';
+    if (stripos($contentType, 'multipart/form-data') !== false && (!empty($_POST) || !empty($_FILES))) {
+        $postFields = $_POST;
+        foreach ($_FILES as $name => $fileInfo) {
+            $postFields[$name] = new CURLFile(
+                $fileInfo['tmp_name'],
+                $fileInfo['type'] ?: 'application/octet-stream',
+                $fileInfo['name']
+            );
+        }
+        curl_setopt($ch, CURLOPT_POST, true);
+        curl_setopt($ch, CURLOPT_POSTFIELDS, $postFields);
+    } else {
+        $input = fopen('php://input', 'r');
+        curl_setopt($ch, CURLOPT_UPLOAD, true);
+        curl_setopt($ch, CURLOPT_INFILE, $input);
+        curl_setopt($ch, CURLOPT_INFILESIZE, $_SERVER['CONTENT_LENGTH']);
+    }
 }
 
 // Execute cURL session

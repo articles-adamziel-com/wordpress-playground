@@ -72,8 +72,17 @@ export async function fetchWithCorsProxy(
 			corsProxyAllowedHeaders.includes('authorization') ||
 			corsProxyAllowedHeaders.includes('cookie');
 
+		// Buffer the request body before sending to the CORS proxy.
+		// Streaming request bodies (ReadableStream with duplex: 'half')
+		// fail with ERR_ALPN_NEGOTIATION_FAILED when the target server
+		// doesn't support HTTP/2 streaming uploads.
+		const bufferedBody = request2.body
+			? await new Response(request2.body).arrayBuffer()
+			: undefined;
+
 		const newRequest = await cloneRequest(request2, {
 			url: `${corsProxyUrl}${requestObject.url}`,
+			body: bufferedBody,
 			...(requestIntendsToPassCredentials && { credentials: 'include' }),
 		});
 
