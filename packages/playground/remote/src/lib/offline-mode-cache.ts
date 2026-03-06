@@ -41,7 +41,7 @@ export async function cacheFirstFetch(request: Request): Promise<Response> {
 		 * from a stale worker has no benefits. It only takes
 		 * up space.
 		 */
-		if (isCurrentServiceWorkerActive()) {
+		if (isCurrentServiceWorkerActive() && request.method === 'GET') {
 			// Intentionally do not await writing to the cache so the response
 			// promise can be returned immediately and observed for progress events.
 			// NOTE: This is a race condition for simultaneous requests for the same asset.

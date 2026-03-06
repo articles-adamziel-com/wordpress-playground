@@ -115,6 +115,14 @@ export default defineConfig(({ command, mode }) => {
 					changeOrigin: true,
 					rewrite: (path) =>
 						path.replace(/^\/cors-proxy\/\?/, '/cors-proxy.php?'),
+					// Request uncompressed responses from the PHP
+					// cors proxy so a reverse proxy (e.g. valet)
+					// doesn't double-compress the response.
+					configure: (proxy) => {
+						proxy.on('proxyReq', (proxyReq) => {
+							proxyReq.setHeader('Accept-Encoding', 'identity');
+						});
+					},
 				},
 				// Proxy requests to the website-extras
 				'^/website-extras/': {
