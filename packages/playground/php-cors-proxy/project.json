@@ -8,8 +8,10 @@
 			"executor": "nx:run-commands",
 			"options": {
 				"commands": [
-					"PLAYGROUND_CORS_PROXY_DISABLE_RATE_LIMIT=true php -S 127.0.0.1:5263"
+					"PLAYGROUND_CORS_PROXY_DISABLE_RATE_LIMIT=true php -S 127.0.0.1:5263",
+					"node h2-proxy.mjs"
 				],
+				"parallel": true,
 				"cwd": "packages/playground/php-cors-proxy"
 			}
 		},

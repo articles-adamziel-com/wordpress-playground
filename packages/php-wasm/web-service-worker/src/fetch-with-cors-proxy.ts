@@ -72,37 +72,12 @@ export async function fetchWithCorsProxy(
 			corsProxyAllowedHeaders.includes('authorization') ||
 			corsProxyAllowedHeaders.includes('cookie');
 
-		// Try streaming the request body to the CORS proxy first.
-		// This works in production where the CORS proxy supports HTTP/2.
-		// In development (HTTP/1.1), Chrome rejects streaming uploads with
-		// ERR_ALPN_NEGOTIATION_FAILED, so we fall back to buffering the
-		// body into an ArrayBuffer and retrying.
-		const corsProxyRequestUrl = `${corsProxyUrl}${requestObject.url}`;
-		const corsProxyRequestOverrides = {
-			url: corsProxyRequestUrl,
+		const newRequest = await cloneRequest(request2, {
+			url: `${corsProxyUrl}${requestObject.url}`,
 			...(requestIntendsToPassCredentials && { credentials: 'include' }),
-		};
+		});
 
-		// Tee request2 so we can retry with a buffered body if streaming fails.
-		const [streamingRequest, bufferRequest] = await teeRequest(request2);
-
-		let response: Response;
-		try {
-			const newRequest = await cloneRequest(
-				streamingRequest,
-				corsProxyRequestOverrides
-			);
-			response = await fetch(newRequest, init);
-		} catch {
-			const bufferedBody = bufferRequest.body
-				? await new Response(bufferRequest.body).arrayBuffer()
-				: undefined;
-			const newRequest = await cloneRequest(bufferRequest, {
-				...corsProxyRequestOverrides,
-				body: bufferedBody,
-			});
-			response = await fetch(newRequest, init);
-		}
+		const response = await fetch(newRequest, init);
 
 		// Check for firewall interference: if we got a response but it's
 		// missing the CORS proxy identification header, the response likely

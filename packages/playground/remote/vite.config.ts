@@ -50,7 +50,7 @@ export default defineConfig(({ mode }) => {
 			? process.env['CORS_PROXY_URL']
 			: mode === 'production'
 				? 'https://wordpress-playground-cors-proxy.net/?'
-				: '/cors-proxy/?';
+				: 'https://localhost:5264/cors-proxy.php?';
 
 	plugins.push(
 		virtualModule({

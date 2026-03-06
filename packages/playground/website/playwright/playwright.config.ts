@@ -35,7 +35,12 @@ export const playwrightConfig: PlaywrightTestConfig = {
 			use: {
 				...devices['Desktop Chrome'],
 				launchOptions: {
-					args: ['--js-flags=--enable-experimental-webassembly-jspi'],
+					args: [
+						'--js-flags=--enable-experimental-webassembly-jspi',
+						// Accept the self-signed certificate on the HTTP/2
+						// CORS proxy (localhost:5264) used in dev and CI.
+						'--ignore-certificate-errors',
+					],
 				},
 			},
 		},
