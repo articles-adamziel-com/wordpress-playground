@@ -210,10 +210,6 @@ curl_setopt(
             return $len;
         }
 
-        if(in_array($name, ['strict-transport-security', 'content-security-policy', 'upgrade-insecure-requests'], true)) {
-            return $len;
-        }
-
         if ($name === 'transfer-encoding' && stripos($value, 'chunked') !== false) {
             $is_chunked_response = true;
             header($header, false);
@@ -247,7 +243,12 @@ curl_setopt(
             stripos($header, 'Access-Control-Allow-Origin:') !== 0 &&
             stripos($header, 'Access-Control-Allow-Credentials:') !== 0 &&
             stripos($header, 'Access-Control-Allow-Methods:') !== 0 &&
-            stripos($header, 'Access-Control-Allow-Headers:') !== 0
+            stripos($header, 'Access-Control-Allow-Headers:') !== 0 &&
+            // HSTS headers have consequences for the entire domain. Let's not
+            // allow any remote site to decide on the CORS proxy HSTS policy.
+            // Besides, they won't work with the http-only local dev server.
+            stripos($header, 'Strict-Transport-Security:') !== 0 &&
+            stripos($header, 'Upgrade-Insecure-Requests:') !== 0
         ) {
             header($header, false);
         }
