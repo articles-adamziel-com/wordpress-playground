@@ -372,51 +372,25 @@ describe('TCPOverFetchWebsocket over HTTP', () => {
 	});
 
 	it('should handle a request with paused streaming', async () => {
+		// The body is fully buffered before fetch() is called (HTTP/1.1
+		// compatibility), so we send all parts up front and then read
+		// the complete response.
+		const bodyParts = ['Part 1', 'Part 2', 'Part 3'];
+		const fullBody = bodyParts.join('');
 		const socket = new TCPOverFetchWebsocket(
 			`ws://playground.internal/?host=${host}&port=${port}`,
 			[],
 			{ outputType: 'stream' }
 		);
-		const headers = `POST /echo HTTP/1.1\r\nHost: ${host}:${port}\r\nContent-Length: 18\r\n\r\n`;
+		const headers = `POST /echo HTTP/1.1\r\nHost: ${host}:${port}\r\nContent-Length: ${fullBody.length}\r\n\r\n`;
 		socket.send(new TextEncoder().encode(headers));
-		socket.send(new TextEncoder().encode(`Part 1`));
+		for (const part of bodyParts) {
+			socket.send(new TextEncoder().encode(part));
+		}
 
-		const responseStream = socket.clientDownstream.readable.pipeThrough(
-			new TextDecoderStream()
-		);
-
-		const reader = responseStream.getReader();
-
-		const responseHeaders = await reader.read();
-		expect(responseHeaders.value).toContain('HTTP/1.1 200 OK');
-		expect(responseHeaders.done).toBe(false);
-
-		await reader.read(); // Skip the chunk length (Transfer-Encoding: chunked)
-		const responseBodyPart1 = await reader.read();
-		await reader.read(); // Skip the chunk delimiter
-		expect(responseBodyPart1.value).toContain('Part 1');
-		expect(responseBodyPart1.done).toBe(false);
-
-		// Wait for a bit, ensure the connection remains open
-		await new Promise((resolve) => setTimeout(resolve, 500));
-
-		socket.send(new TextEncoder().encode(`Part 2`));
-		await reader.read(); // Skip the chunk length
-		const responseBodyPart2 = await reader.read();
-		await reader.read(); // Skip the chunk delimiter
-		expect(responseBodyPart2.value).toContain('Part 2');
-		expect(responseBodyPart2.done).toBe(false);
-
-		socket.send(new TextEncoder().encode(`Part 3`));
-		await reader.read(); // Skip the chunk length
-		const responseBodyPart3 = await reader.read();
-		await reader.read(); // Skip the chunk delimiter
-		expect(responseBodyPart3.done).toBe(false);
-		expect(responseBodyPart3.value).toContain('Part 3');
-
-		await reader.read(); // Skip the final empty chunk
-		const responseBodyPart4 = await reader.read();
-		expect(responseBodyPart4.done).toBe(true);
+		const response = await bufferResponse(socket);
+		expect(response).toContain('HTTP/1.1 200 OK');
+		expect(response).toContain(fullBody);
 	});
 
 	it('should handle a multipart/form-data POST request', async () => {
