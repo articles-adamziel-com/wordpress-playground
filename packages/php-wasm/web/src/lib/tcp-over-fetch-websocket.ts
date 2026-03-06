@@ -725,14 +725,49 @@ export class RawBytesFetch {
 		const hostname = parsedHeaders.headers.get('Host') ?? host;
 		const url = new URL(parsedHeaders.path, protocol + '://' + hostname);
 
+		let body: ArrayBuffer | undefined;
+		let duplex: string | undefined;
+		if (outboundBodyStream) {
+			/**
+			 * Chrome does not support using a ReadableStream request body
+			 * with HTTP/1.1 requests. If we just always set `duplex: 'half'`,
+			 * we'll an ERR_ALPN_NEGOTIATION_FAILED error as Chrome will
+			 * refuse to use duplex over HTTP/1.1 and will switch to HTTP/2.
+			 * A HTTP/1.1-only server, however, will still reply with a HTTP/1.1
+			 * response, causing that ALPN error.
+			 *
+			 * We do not know upfront what kind of server we're talking to,
+			 * so we'll make a guess. Most clients do not support HTTP >= 2
+			 * without TLS, so we can assume that anything starting with `http://`
+			 * requires buffering the body stream. This solves the ALPN negotiation
+			 * problem on the local dev server.
+			 *
+			 * There will, inevitably, be some ancient HTTP/1.1+TLS servers on
+			 * the internet that will fall into the `duplex: half` trap. This
+			 * is not a big problem, though, since those requests will fail
+			 * and be retried over the CORS proxy which runs alongside Playground
+			 * and speaks either HTTP/1.1 in the local dev server or HTTP/2+ in
+			 * production.
+			 */
+			if (protocol === 'http') {
+				const reader = outboundBodyStream.getReader();
+				const chunks: Uint8Array[] = [];
+				while (true) {
+					const { done, value } = await reader.read();
+					if (done) break;
+					if (value) chunks.push(value);
+				}
+				body = concatUint8Arrays(chunks).buffer;
+			} else {
+				duplex = 'half';
+			}
+		}
+
 		const request = new Request(url.toString(), {
 			method: parsedHeaders.method,
 			headers: parsedHeaders.headers,
-			body: outboundBodyStream,
-			// In Node.js, duplex: 'half' is required when
-			// the body stream is provided.
-			// @ts-expect-error
-			duplex: 'half',
+			body,
+			...(duplex && { duplex }),
 		});
 		return { request, expectsContinue: parsedHeaders.expectsContinue };
 	}
