@@ -15,7 +15,7 @@ export default defineConfig({
 		url: 'http://127.0.0.1/',
 		reuseExistingServer: false,
 		env: {
-			CORS_PROXY_URL: 'https://localhost:5264/cors-proxy.php?',
+			CORS_PROXY_URL: 'http://127.0.0.1:5263/cors-proxy.php?',
 			DEBUG: 'pw:webserver',
 		},
 	},

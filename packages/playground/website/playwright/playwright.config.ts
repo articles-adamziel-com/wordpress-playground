@@ -23,9 +23,6 @@ export const playwrightConfig: PlaywrightTestConfig = {
 		trace: 'on-first-retry',
 		actionTimeout: 120000,
 		navigationTimeout: 120000,
-		// Accept the self-signed certificate on the HTTP/2 CORS proxy
-		// (localhost:5264) used in dev and CI.
-		ignoreHTTPSErrors: true,
 	},
 
 	timeout: 300000,
@@ -38,10 +35,7 @@ export const playwrightConfig: PlaywrightTestConfig = {
 			use: {
 				...devices['Desktop Chrome'],
 				launchOptions: {
-					args: [
-						'--js-flags=--enable-experimental-webassembly-jspi',
-						'--ignore-certificate-errors',
-					],
+					args: ['--js-flags=--enable-experimental-webassembly-jspi'],
 				},
 			},
 		},
