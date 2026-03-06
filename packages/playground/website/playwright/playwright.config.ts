@@ -23,6 +23,9 @@ export const playwrightConfig: PlaywrightTestConfig = {
 		trace: 'on-first-retry',
 		actionTimeout: 120000,
 		navigationTimeout: 120000,
+		// Accept the self-signed certificate on the HTTP/2 CORS proxy
+		// (localhost:5264) used in dev and CI.
+		ignoreHTTPSErrors: true,
 	},
 
 	timeout: 300000,
@@ -37,8 +40,6 @@ export const playwrightConfig: PlaywrightTestConfig = {
 				launchOptions: {
 					args: [
 						'--js-flags=--enable-experimental-webassembly-jspi',
-						// Accept the self-signed certificate on the HTTP/2
-						// CORS proxy (localhost:5264) used in dev and CI.
 						'--ignore-certificate-errors',
 					],
 				},
