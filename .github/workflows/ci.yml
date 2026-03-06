@@ -238,7 +238,7 @@ jobs:
             - name: Install Playwright Browser
               run: sudo npx playwright install ${{ matrix.browser }} --with-deps
             - name: Build app for E2E tests
-              run: CORS_PROXY_URL=https://localhost:5264/cors-proxy.php? npx nx e2e:playwright:prepare-app-deploy-and-offline-mode playground-website
+              run: CORS_PROXY_URL=http://127.0.0.1:5263/cors-proxy.php? npx nx e2e:playwright:prepare-app-deploy-and-offline-mode playground-website
             - name: Run Playwright tests - ${{ matrix.browser }}${{ matrix.shard && format(' (shard {0})', matrix.shard) || '' }}
               run: |
                   SHARD_ARG=""
