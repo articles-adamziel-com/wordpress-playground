@@ -92,9 +92,24 @@ const server = createSecureServer(
 				headers: forwardHeaders,
 			},
 			(proxyRes) => {
+				// Strip HTTP/1.1 connection-specific headers that are
+				// forbidden in HTTP/2 (RFC 9113 section 8.2.2).
+				const headers = {};
+				const connectionHeaders = new Set([
+					'transfer-encoding',
+					'connection',
+					'keep-alive',
+					'upgrade',
+					'proxy-connection',
+				]);
+				for (const [key, value] of Object.entries(proxyRes.headers)) {
+					if (!connectionHeaders.has(key)) {
+						headers[key] = value;
+					}
+				}
+
 				// Add CORS headers so the browser accepts cross-origin
 				// responses from this server.
-				const headers = { ...proxyRes.headers };
 				headers['access-control-allow-origin'] = '*';
 				headers['access-control-allow-methods'] =
 					'GET, POST, PUT, DELETE, PATCH, OPTIONS';
