@@ -1,7 +1,7 @@
 ---
-title: Pacotes de Blueprint
+title: Paquetes de Blueprint
 slug: /blueprints/bundles
-description: Saiba mais sobre pacotes de Blueprint, pacotes independentes que incluem um arquivo blueprint.json e todos os recursos necessários.
+description: Conoce los paquetes de Blueprint, paquetes autocontenidos que incluyen un archivo blueprint.json y todos los recursos necesarios.
 ---
 
 <!--
@@ -9,48 +9,48 @@ title: Blueprint Bundles
 description: Learn about Blueprint bundles, self-contained packages that include a blueprint.json file and all its required resources.
 -->
 
-# Pacotes de Blueprint
+# Paquetes de Blueprint
 
 <!--
 # Blueprint Bundles
 -->
 
-Pacotes de Blueprint são pacotes autocontidos que incluem uma declaração de Blueprint (`blueprint.json`) e todos os recursos adicionais necessários para compilá-lo e executá-lo. Isso facilita distribuir e compartilhar configurações completas do WordPress Playground.
+Los paquetes de Blueprint son paquetes autocontenidos que incluyen una declaración de Blueprint (`blueprint.json`) junto con todos los recursos adicionales necesarios para compilarlo y ejecutarlo. Así es más fácil distribuir y compartir configuraciones completas de WordPress Playground.
 
 <!--
 Blueprint bundles are self-contained packages that include a Blueprint declaration (`blueprint.json`) along with all the additional resources required to compile and run it. This makes it easier to distribute and share complete WordPress Playground setups.
 -->
 
-## O que são pacotes de Blueprint?
+## ¿Qué son los paquetes de Blueprint?
 
 <!--
 ## What are Blueprint Bundles?
 -->
 
-Um pacote de Blueprint é uma coleção de arquivos que inclui:
+Un paquete de Blueprint es una colección de archivos que incluye:
 
 <!--
 A Blueprint bundle is a collection of files that includes:
 -->
 
-1. Um arquivo `blueprint.json` que define a configuração do Blueprint
-2. Quaisquer recursos adicionais referenciados pelo Blueprint (temas, plugins, arquivos de conteúdo, etc.)
+1. Un archivo `blueprint.json` que define la configuración del Blueprint
+2. Cualquier recurso adicional al que haga referencia el Blueprint (temas, plugins, archivos de contenido, etc.)
 
 <!--
 1. A `blueprint.json` file that defines the Blueprint configuration
 2. Any additional resources referenced by the Blueprint (themes, plugins, content files, etc.)
 -->
 
-Pacotes de Blueprint podem ser distribuídos em vários formatos:
+Los paquetes de Blueprint pueden distribuirse en varios formatos:
 
 <!--
 Blueprint bundles can be distributed in various formats:
 -->
 
-- Um arquivo ZIP com `blueprint.json` no nível superior e recursos adicionais
-- Um diretório dentro de um repositório git em que o `blueprint.json` fica junto dos demais recursos
-- Um diretório local no seu computador
-- Um objeto JavaScript inline com os arquivos relevantes embutidos
+- Un archivo ZIP con un `blueprint.json` en el nivel superior y recursos adicionales
+- Un directorio dentro de un repositorio git donde `blueprint.json` convive con otros recursos
+- Un directorio local en tu equipo
+- Un objeto JavaScript en línea con los archivos pertinentes incrustados
 
 <!--
 - A ZIP file with a top-level `blueprint.json` file and additional resources
@@ -59,19 +59,19 @@ Blueprint bundles can be distributed in various formats:
 - An inline JavaScript object with the relevant files inlined
 -->
 
-## Usar pacotes de Blueprint
+## Uso de paquetes de Blueprint
 
 <!--
 ## Using Blueprint Bundles
 -->
 
-### No site
+### En el sitio web
 
 <!--
 ### On the Website
 -->
 
-O site do WordPress Playground aceita pacotes de Blueprint pelo parâmetro de consulta `?blueprint-url=`. Você pode informar a URL de um arquivo ZIP com o seu pacote:
+El sitio de WordPress Playground admite paquetes de Blueprint mediante el parámetro de consulta `?blueprint-url=`. Puedes indicar la URL de un archivo ZIP con tu paquete de Blueprint:
 
 <!--
 The WordPress Playground website supports Blueprint bundles through the `?blueprint-url=` query parameter. You can provide a URL to a ZIP file containing your Blueprint bundle:
@@ -87,27 +87,27 @@ https://playground.wordpress.net/?blueprint-url=https://example.com/my-blueprint
 ```
 -->
 
-O ZIP deve conter um `blueprint.json` na raiz, além dos recursos adicionais referenciados pelo Blueprint.
+El archivo ZIP debe incluir un `blueprint.json` en la raíz, junto con los recursos adicionales a los que haga referencia el Blueprint.
 
 <!--
 The ZIP file should contain a `blueprint.json` file at the root level, along with any additional resources referenced by the Blueprint.
 -->
 
-### Na CLI
+### En la CLI
 
 <!--
 ### In the CLI
 -->
 
-O Playground CLI aceita pacotes de Blueprint pela opção `--blueprint=`. Você pode informar:
+Playground CLI admite paquetes de Blueprint mediante la opción `--blueprint=`. Puedes indicar:
 
 <!--
 The Playground CLI supports Blueprint bundles through the `--blueprint=` option. You can provide:
 -->
 
-- Caminho para um diretório local com um pacote de Blueprint
-- Caminho para um arquivo ZIP local com um pacote de Blueprint
-- URL de um pacote remoto (http:// ou https://)
+- La ruta a un directorio local que contenga un paquete de Blueprint
+- La ruta a un archivo ZIP local que contenga un paquete de Blueprint
+- La URL de un paquete de Blueprint remoto (http:// o https://)
 
 <!--
 - A path to a local directory containing a Blueprint bundle
@@ -115,7 +115,7 @@ The Playground CLI supports Blueprint bundles through the `--blueprint=` option.
 - A URL to a remote Blueprint bundle (http:// or https://)
 -->
 
-Por exemplo:
+Por ejemplo:
 
 <!--
 For example:
@@ -145,7 +145,7 @@ npx @wp-playground/cli --blueprint=./my-blueprint-directory server
 ```
 -->
 
-Por padrão, a CLI restringe o acesso a arquivos locais por segurança. Se o Blueprint precisar ler arquivos no mesmo diretório pai, conceda permissão com a flag `--blueprint-may-read-adjacent-files`:
+Por defecto, la CLI restringe el acceso a archivos locales por seguridad. Si tu Blueprint necesita leer archivos en el mismo directorio padre, debes conceder permiso explícitamente con la opción `--blueprint-may-read-adjacent-files`:
 
 <!--
 By default, the CLI restricts access to local files for security reasons. If your Blueprint needs to access files in the same parent directory, you need to explicitly grant permission using the `--blueprint-may-read-adjacent-files` flag:
@@ -161,19 +161,19 @@ npx @wp-playground/cli --blueprint=./my-blueprint.json --blueprint-may-read-adja
 ```
 -->
 
-## Criar pacotes de Blueprint
+## Crear paquetes de Blueprint
 
 <!--
 ## Creating Blueprint Bundles
 -->
 
-### Estrutura básica
+### Estructura básica
 
 <!--
 ### Basic Structure
 -->
 
-Um pacote de Blueprint básico pode ser assim:
+Un paquete de Blueprint básico puede tener este aspecto:
 
 <!--
 A basic Blueprint bundle might look like this:
@@ -199,13 +199,13 @@ my-blueprint-bundle/
 ```
 -->
 
-### Exemplo de Blueprint com recursos empacotados
+### Ejemplo de Blueprint con recursos incluidos
 
 <!--
 ### Example Blueprint with Bundled Resources
 -->
 
-Exemplo de `blueprint.json` que referencia recursos empacotados:
+Aquí tienes un ejemplo de archivo `blueprint.json` que referencia recursos incluidos en el paquete:
 
 <!--
 Here's an example of a `blueprint.json` file that references bundled resources:
@@ -287,16 +287,16 @@ Here's an example of a `blueprint.json` file that references bundled resources:
 ```
 -->
 
-Neste exemplo, o Blueprint referencia vários recursos empacotados:
+En este ejemplo, el Blueprint referencia varios recursos incluidos:
 
 <!--
 In this example, the Blueprint references several bundled resources:
 -->
 
-- Arquivo de texto em `/bundled-text-file.txt`
-- ZIP do tema em `/theme.zip`
-- ZIP do plugin em `/plugin.zip`
-- Arquivo de conteúdo WXR em `/content/sample-content.wxr`
+- Un archivo de texto en `/bundled-text-file.txt`
+- Un ZIP de tema en `/theme.zip`
+- Un ZIP de plugin en `/plugin.zip`
+- Un archivo de contenido WXR en `/content/sample-content.wxr`
 
 <!--
 - A text file at `/bundled-text-file.txt`
@@ -305,13 +305,13 @@ In this example, the Blueprint references several bundled resources:
 - A WXR content file at `/content/sample-content.wxr`
 -->
 
-### Criar um pacote ZIP
+### Crear un paquete ZIP
 
 <!--
 ### Creating a ZIP Bundle
 -->
 
-Para criar um pacote ZIP, crie um diretório com o `blueprint.json` e todos os recursos necessários e compacte:
+Para crear un paquete ZIP, crea un directorio con tu `blueprint.json` y todos los recursos necesarios y comprímelo:
 
 <!--
 To create a ZIP bundle, simply create a directory with your `blueprint.json` and all required resources, then zip it up:
@@ -343,33 +343,33 @@ zip -r ../my-blueprint-bundle.zip .
 ```
 -->
 
-## Flexibilidade da estrutura do ZIP
+## Flexibilidad en la estructura del ZIP
 
 <!--
 ## ZIP File Structure Flexibility
 -->
 
-Pacotes de Blueprint aceitam `blueprint.json` em dois locais dentro do ZIP:
+Los paquetes de Blueprint admiten `blueprint.json` en dos ubicaciones dentro de un archivo ZIP:
 
 <!--
 Blueprint bundles support `blueprint.json` at two locations within a ZIP file:
 -->
 
-1. **Na raiz** (padrão): `blueprint.json` fica diretamente na raiz do ZIP
-2. **Um nível de pasta**: `blueprint.json` fica dentro de um único diretório de primeiro nível
+1. **En la raíz** (habitual): `blueprint.json` está directamente en la raíz del ZIP
+2. **Un nivel de carpeta**: `blueprint.json` está dentro de un único directorio de primer nivel
 
 <!--
 1. **Root level** (standard): `blueprint.json` sits directly at the ZIP root
 2. **One directory deep**: `blueprint.json` sits inside a single top-level directory
 -->
 
-Assim, ZIPs criados com «Comprimir» no macOS (que envolvem o conteúdo em uma pasta) funcionam automaticamente. O diretório de metadados `__MACOSX` é ignorado na detecção.
+Así, los ZIP creados con «Comprimir» del menú contextual en macOS (que envuelven el contenido en una carpeta) funcionan sin pasos extra. El directorio de metadatos `__MACOSX` se ignora al detectar el Blueprint.
 
 <!--
 This means ZIP files created with macOS's right-click "Compress" feature (which wraps contents in a folder) work automatically. The `__MACOSX` metadata directory is ignored during detection.
 -->
 
-**Exemplo: estas duas estruturas de ZIP funcionam:**
+**Ejemplo: estas dos estructuras de ZIP son válidas:**
 
 <!--
 **Example: Both of these ZIP structures work:**
@@ -409,29 +409,29 @@ my-bundle.zip/
 ```
 -->
 
-Se vários diretórios de primeiro nível contiverem `blueprint.json`, o Playground retorna um erro para evitar ambiguidade.
+Si varios directorios de primer nivel contienen un `blueprint.json`, Playground devuelve un error para evitar ambigüedades.
 
 <!--
 If multiple top-level directories contain a `blueprint.json`, Playground returns an error to avoid ambiguity.
 -->
 
-## Solução de problemas
+## Solución de problemas
 
 <!--
 ## Troubleshooting
 -->
 
-Se tiver problemas com pacotes de Blueprint:
+Si tienes problemas con los paquetes de Blueprint:
 
 <!--
 If you encounter issues with Blueprint bundles:
 -->
 
-1. Confira se o `blueprint.json` está na raiz do ZIP ou dentro de um único diretório de primeiro nível
-2. Verifique se os caminhos nas referências a recursos empacotados estão corretos
-3. Confirme se o ZIP está bem formado
-4. Na CLI, veja se precisa da flag `--blueprint-may-read-adjacent-files`
-5. Garanta que todos os recursos necessários estão no pacote
+1. Comprueba que `blueprint.json` esté en la raíz del ZIP o dentro de un único directorio de primer nivel
+2. Verifica que las rutas en las referencias a recursos incluidos sean correctas
+3. Comprueba que el ZIP esté bien formado
+4. Si usas la CLI, comprueba si necesitas la opción `--blueprint-may-read-adjacent-files`
+5. Asegúrate de que el paquete incluye todos los recursos necesarios
 
 <!--
 1. Ensure your `blueprint.json` file is at the root level of your ZIP file or inside a single top-level directory
