@@ -10,9 +10,29 @@ The Playground PR Preview action adds a preview button to your pull requests. Cl
 
 For complete configuration options and advanced features, see the [action-wp-playground-pr-preview workflow README](https://github.com/WordPress/action-wp-playground-pr-preview/tree/v2).
 
+:::warning This is a regular action, not a reusable workflow
+
+Reference `WordPress/action-wp-playground-pr-preview@v2` from inside `jobs.<job_id>.steps`, not from `jobs.<job_id>.uses`. GitHub only allows `jobs.<job_id>.uses` for reusable workflows that point to another workflow file (e.g. `owner/repo/.github/workflows/file.yml@ref`). Using it at the job level here will fail with an error like `invalid value workflow reference`.
+
+```yaml
+# ❌ Wrong — this syntax is only for reusable workflows
+jobs:
+    preview:
+        uses: WordPress/action-wp-playground-pr-preview@v2
+
+# ✅ Correct — actions go inside steps
+jobs:
+    preview:
+        runs-on: ubuntu-latest
+        steps:
+            - uses: WordPress/action-wp-playground-pr-preview@v2
+```
+
+:::
+
 ## How it works
 
-The action runs on pull request events (opened, updated, edited). It can either update the PR description with a preview button or post the button as a comment.
+The action runs on pull request events (opened, updated, edited, reopened, synchronize). It can either update the PR description with a preview button or post the button as a comment.
 
 ## Basic setup for plugins
 
@@ -34,12 +54,13 @@ jobs:
             - name: Post Playground Preview Button
               uses: WordPress/action-wp-playground-pr-preview@v2
               with:
-                  github-token: ${{ secrets.GITHUB_TOKEN }}
                   mode: 'append-to-description'
                   plugin-path: .
 ```
 
 The `plugin-path: .` setting points to your plugin directory. For subdirectories like `plugins/my-plugin`, use `plugin-path: plugins/my-plugin`.
+
+The `permissions` block is required: the action needs `pull-requests: write` to update the PR description or post a comment. `github-token` is optional and defaults to the workflow's built-in `GITHUB_TOKEN` — set it only when you need a different token.
 
 See [adamziel/preview-in-playground-button-plugin-example](https://github.com/adamziel/preview-in-playground-button-plugin-example/pull/3) for a live example of this workflow in action.
 
@@ -63,7 +84,6 @@ jobs:
             - name: Post Playground Preview Button
               uses: WordPress/action-wp-playground-pr-preview@v2
               with:
-                  github-token: ${{ secrets.GITHUB_TOKEN }}
                   theme-path: .
 ```
 
@@ -75,7 +95,6 @@ By default, the action updates the PR description (`mode: append-to-description`
 with:
     plugin-path: .
     mode: comment
-    github-token: ${{ secrets.GITHUB_TOKEN }}
 ```
 
 The action wraps the button in HTML markers and updates it on subsequent runs. By default, it restores the button if you remove it. To prevent restoration:
@@ -87,6 +106,12 @@ with:
 ```
 
 ## Working with built artifacts
+
+:::caution Pull requests from forks
+
+Workflows triggered by `pull_request` from a forked repository run with restricted permissions: they cannot write to the PR, access secrets, or publish releases. If you need to support fork PRs, split the work into two workflows — a `pull_request`-triggered build that uploads artifacts, and a `workflow_run`-triggered publish step that posts the preview. See the [Advanced: Testing Built CI Artifacts](https://github.com/WordPress/action-wp-playground-pr-preview/tree/v2#advanced-testing-built-ci-artifacts) section of the README for the full two-workflow pattern. Avoid `pull_request_target` unless you fully understand the [security implications](https://securitylab.github.com/research/github-actions-preventing-pwn-requests/) — it runs with write access to your repository.
+
+:::
 
 For plugins or themes requiring compilation, the workflow involves building the code, exposing it via GitHub releases, and creating a blueprint that references the public URL.
 
@@ -250,9 +275,14 @@ with:
         **Branch:** {{PR_HEAD_REF}}
 ```
 
-Available variables: `{{PLAYGROUND_BUTTON}}`, `{{PLUGIN_SLUG}}`, `{{THEME_SLUG}}`, `{{PR_NUMBER}}`, `{{PR_TITLE}}`, `{{PR_HEAD_REF}}`, and more.
+Available variables:
 
-See the workflow README for the [complete list](https://github.com/WordPress/action-wp-playground-pr-preview/tree/v2#description-template).
+- Playground: `{{PLAYGROUND_BUTTON}}`, `{{PLAYGROUND_URL}}`, `{{PLAYGROUND_BUTTON_IMAGE_URL}}`, `{{PLAYGROUND_BLUEPRINT_JSON}}`, `{{PLAYGROUND_BLUEPRINT_DATA_URL}}`, `{{PLAYGROUND_HOST}}`
+- Pull request: `{{PR_NUMBER}}`, `{{PR_TITLE}}`, `{{PR_HEAD_REF}}`, `{{PR_HEAD_SHA}}`, `{{PR_BASE_REF}}`
+- Repository: `{{REPO_OWNER}}`, `{{REPO_NAME}}`, `{{REPO_FULL_NAME}}`, `{{REPO_SLUG}}`
+- Project: `{{PLUGIN_PATH}}`, `{{PLUGIN_SLUG}}`, `{{THEME_PATH}}`, `{{THEME_SLUG}}`
+
+The same variables work with `comment-template` when using `mode: comment`. See the [workflow README](https://github.com/WordPress/action-wp-playground-pr-preview/tree/v2#description-template) for default templates and examples.
 
 ## Artifact exposure
 
@@ -262,13 +292,17 @@ Configuration options: [Expose Artifact Inputs](https://github.com/WordPress/act
 
 ## Troubleshooting
 
-**Button not appearing:** Workflow file must exist on the default branch. Check Actions tab for errors.
+**`invalid value workflow reference` or `workflow was not found`:** You referenced the action at the job level (`jobs.<id>.uses:`) instead of inside a step (`jobs.<id>.steps[].uses:`). See the warning at the top of this page.
 
-**Preview fails to load:** Verify path points to valid plugin/theme directory. Check build logs for artifacts.
+**Button not appearing on a new PR:** The workflow file must exist on the default branch (usually `trunk` or `main`). GitHub Actions does not run workflow files that only exist on feature branches for `pull_request` events. Also check the Actions tab for failed runs.
 
-**Not activated:** Check browser console for PHP errors. Dependencies may be missing.
+**`Resource not accessible by integration` / 403 when updating the PR:** The job is missing `permissions: pull-requests: write`. Set it at the job level as shown in the [basic setup](#basic-setup-for-plugins). For PRs from forks, the default `GITHUB_TOKEN` is read-only regardless of the `permissions` block — see the fork callout in [Working with built artifacts](#working-with-built-artifacts).
 
-**Permissions errors:** Set permissions at job level.
+**Preview fails to load in Playground:** Verify `plugin-path` or `theme-path` points to a directory containing a valid plugin or theme (with the appropriate header comment in the main PHP file or `style.css`). For built artifacts, check the build job's logs and confirm the artifact was uploaded.
+
+**Plugin/theme not activated:** Open the browser console inside the Playground preview for PHP errors. Missing PHP extensions or unmet dependencies are the usual cause; a custom blueprint can install dependencies first.
+
+**Button keeps coming back after I delete it:** Set `restore-button-if-removed: false`.
 
 More: [workflow README](https://github.com/WordPress/action-wp-playground-pr-preview/tree/v2)
 
