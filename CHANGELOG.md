@@ -4,6 +4,24 @@ All notable changes to this project are documented in this file by a CI job
 that runs on every NPM release. The file follows the [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 format.
 
+## [v3.1.21] (2026-04-20) 
+
+### PHP WebAssembly
+
+- Add PHP 5.2 WebAssembly builds and runtime support. ([#3501](https://github.com/WordPress/wordpress-playground/pull/3501))
+
+### Various
+
+- [Docs] Update trusted publisher setup instructions. ([#3505](https://github.com/WordPress/wordpress-playground/pull/3505))
+- [PHP] Align @php-wasm/{web,node}-5-2 with workspace and add READMEs. ([#3506](https://github.com/WordPress/wordpress-playground/pull/3506))
+
+### Contributors
+
+The following contributors merged PRs in this release:
+
+@adamziel @JanJakes
+
+
 ## [v3.1.20] (2026-04-16) 
 
 ### Tools
