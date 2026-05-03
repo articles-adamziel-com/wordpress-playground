@@ -44,9 +44,34 @@ npx @php-wasm/compile-extension \
 Empty directories are recorded as `type: "directory"` nodes so the loader
 creates them before PHP starts.
 
+The supported `--php-versions` are `7.4` and `8.0` through `8.5`.
+
 Docker is required. The build reuses the `packages/php-wasm/compile` base image
 and its PHP patch set, then runs `phpize`, `emconfigure`, and `emmake` inside
 the container.
+
+## Running in CI
+
+The package only needs Docker and Node. A typical GitHub Actions job:
+
+```yaml
+- uses: actions/checkout@v4
+
+- uses: actions/setup-node@v4
+  with:
+    node-version: '24'
+
+- run: |
+    npx --yes @php-wasm/compile-extension \
+      --source ./my-extension \
+      --name my_extension \
+      --php-versions 8.0,8.1,8.2,8.3,8.4,8.5 \
+      --out ./dist/my-extension
+```
+
+In a matrix workflow, set `strategy.max-parallel: 1` on the WASM job —
+parallel Docker builds on hosted runners often hit apt-mirror flakes during
+the base image build.
 
 ## Loading the result
 
@@ -246,6 +271,12 @@ RUSTFLAGS="-C panic=abort" cargo +nightly build \
 
 Keep dependencies aligned with the custom extension target. Custom extensions
 are JSPI-only, so link `jspi` dependency archives.
+
+`ext-php-rs` `0.15` depends on PHP 8 Zend APIs and does not compile against
+PHP `7.4` headers, so Rust extensions built on top of `ext-php-rs` `0.15`
+should restrict `--php-versions` to `8.0` through `8.5`. The helper itself
+still supports PHP `7.4` for non-Rust extensions and for Rust extensions that
+bind Zend directly through `bindgen`.
 
 `--extra-cflags` is visible during `./configure`. `--extra-ldflags` is applied
 to the final side-module link so dependency archives do not break Autoconf's
