@@ -80,10 +80,93 @@ describe('BlueprintsV1Handler', () => {
 
 		expect(mocks.playground.boot).toHaveBeenCalledWith(
 			expect.objectContaining({
+				shouldBootWordPress: false,
 				shouldInstallWordPress: false,
 			})
 		);
 		expect(mocks.playground.prefetchUpdateChecks).not.toHaveBeenCalled();
+	});
+
+	it('boots WordPress setup when only installation is disabled', async () => {
+		const iframe = createIframe();
+		const handler = new BlueprintsV1Handler({
+			iframe,
+			remoteUrl: 'http://example.com/remote.html',
+			blueprint: {},
+			shouldInstallWordPress: false,
+		});
+
+		await handler.bootPlayground(iframe, createProgressTracker());
+
+		expect(mocks.playground.boot).toHaveBeenCalledWith(
+			expect.objectContaining({
+				shouldBootWordPress: true,
+				shouldInstallWordPress: false,
+			})
+		);
+	});
+
+	it('does not install WordPress when boot is explicitly disabled', async () => {
+		const iframe = createIframe();
+		const handler = new BlueprintsV1Handler({
+			iframe,
+			remoteUrl: 'http://example.com/remote.html',
+			blueprint: {},
+			shouldBootWordPress: false,
+		});
+
+		await handler.bootPlayground(iframe, createProgressTracker());
+
+		expect(mocks.playground.boot).toHaveBeenCalledWith(
+			expect.objectContaining({
+				shouldBootWordPress: false,
+				shouldInstallWordPress: false,
+			})
+		);
+		expect(mocks.playground.prefetchUpdateChecks).not.toHaveBeenCalled();
+	});
+
+	it('rejects WordPress installation when boot is disabled', async () => {
+		const iframe = createIframe();
+		const handler = new BlueprintsV1Handler({
+			iframe,
+			remoteUrl: 'http://example.com/remote.html',
+			blueprint: {},
+			shouldBootWordPress: false,
+			shouldInstallWordPress: true,
+		});
+
+		await expect(
+			handler.bootPlayground(iframe, createProgressTracker())
+		).rejects.toThrow(
+			'Conflicting options: WordPress installation was requested, ' +
+				'but WordPress boot was disabled. Pick one.'
+		);
+		expect(mocks.playground.boot).not.toHaveBeenCalled();
+	});
+
+	it('rejects WordPress installation for PHP-only blueprints', async () => {
+		const iframe = createIframe();
+		const handler = new BlueprintsV1Handler({
+			iframe,
+			remoteUrl: 'http://example.com/remote.html',
+			blueprint: {
+				preferredVersions: {
+					php: '8.4',
+					wp: false,
+				},
+			},
+			shouldInstallWordPress: true,
+		});
+
+		await expect(
+			handler.bootPlayground(iframe, createProgressTracker())
+		).rejects.toThrow(
+			'Conflicting options: WordPress install or boot was requested, ' +
+				'but the Blueprint sets ' +
+				'`preferredVersions.wp: false`. Pick one.'
+		);
+		expect(mocks.playground.boot).not.toHaveBeenCalled();
 	});
 
 	it('prefetches WordPress updates when WordPress is installed', async () => {
