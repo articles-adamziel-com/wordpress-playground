@@ -12,6 +12,28 @@ All notable changes to this project are documented in this file by a CI job
 that runs on every NPM release. The file follows the [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)
 format.
 
+## [v3.1.28] (2026-05-05) 
+
+### PHP WebAssembly
+
+- Fix saved SQLite site boot. ([#3588](https://github.com/WordPress/wordpress-playground/pull/3588))
+- [compile-extension] Fetch Docker assets lazily. ([#3598](https://github.com/WordPress/wordpress-playground/pull/3598))
+
+### Website
+
+- Escape TinyMCE inline CSS in WP editor init. ([#3597](https://github.com/WordPress/wordpress-playground/pull/3597))
+
+### Internal
+
+- [Repo] Cap package labels and infer type labels. ([#3574](https://github.com/WordPress/wordpress-playground/pull/3574))
+
+### Contributors
+
+The following contributors merged PRs in this release:
+
+@adamziel @ashfame @JanJakes
+
+
 ## [v3.1.27] (2026-05-04) 
 
 
