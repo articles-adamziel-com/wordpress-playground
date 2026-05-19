@@ -1,0 +1,73 @@
+name: Build fs-ext prebuilds
+
+on:
+    workflow_dispatch:
+    push:
+        branches:
+            - '**'
+        paths:
+            - '.github/workflows/fs-ext-prebuilds.yml'
+            - 'tools/scripts/build-fs-ext-prebuild.sh'
+    pull_request:
+        paths:
+            - '.github/workflows/fs-ext-prebuilds.yml'
+            - 'tools/scripts/build-fs-ext-prebuild.sh'
+
+jobs:
+    fs-ext-prebuild:
+        name: fs-ext prebuild (Node ${{ matrix.node }} / ${{ matrix.target_os }}-${{ matrix.arch }})
+        runs-on: ${{ matrix.runner }}
+        strategy:
+            fail-fast: false
+            matrix:
+                include:
+                    - node: 22
+                      runner: ubuntu-latest
+                      arch: x64
+                      node_arch: x64
+                      target_os: linux
+                    - node: 22
+                      runner: ubuntu-24.04-arm
+                      arch: arm64
+                      node_arch: arm64
+                      target_os: linux
+                    - node: 22
+                      runner: macos-15-intel
+                      arch: x64
+                      node_arch: x64
+                      target_os: darwin
+                    - node: 22
+                      runner: macos-15
+                      arch: arm64
+                      node_arch: arm64
+                      target_os: darwin
+                    - node: 22
+                      runner: windows-latest
+                      arch: x64
+                      node_arch: x64
+                      target_os: win32
+                    - node: 22
+                      runner: windows-latest
+                      arch: arm64
+                      node_arch: x64
+                      target_os: win32
+        steps:
+            - uses: actions/checkout@v4
+            - name: Setup Node.js
+              uses: actions/setup-node@v4
+              with:
+                  node-version: ${{ matrix.node }}
+                  architecture: ${{ matrix.node_arch }}
+                  check-latest: true
+            - name: Build fs-ext prebuild
+              shell: bash
+              run: tools/scripts/build-fs-ext-prebuild.sh
+              env:
+                  TARGET_OS: ${{ matrix.target_os }}
+                  TARGET_ARCH: ${{ matrix.arch }}
+                  npm_config_arch: ${{ matrix.arch }}
+            - name: Upload artifact
+              uses: actions/upload-artifact@v4
+              with:
+                  name: fs-ext-${{ matrix.target_os }}-${{ matrix.arch }}-node${{ matrix.node }}
+                  path: tools/fs-ext-artifacts/*.tar.gz

@@ -66,6 +66,7 @@ php.js.bak
 **/test-results/
 **/playwright-report/
 **/blob-report/
+tools/fs-ext-artifacts/
 
 # @php-wasm/cli saves this file to disk so PHP has access to it.
 # Since it is dynamically generated from the Node.js TLS module,
