@@ -41,6 +41,17 @@
 					"tsc -p packages/playground/devtools-extension/tsconfig.lib.json --noEmit"
 				]
 			}
+		},
+		"test": {
+			"executor": "@nx/vitest:test",
+			"outputs": [
+				"{workspaceRoot}/coverage/packages/playground/devtools-extension"
+			],
+			"options": {
+				"config": "packages/playground/devtools-extension/vitest.config.ts",
+				"passWithNoTests": true,
+				"reportsDirectory": "../../../coverage/packages/playground/devtools-extension"
+			}
 		}
 	},
 	"tags": []
