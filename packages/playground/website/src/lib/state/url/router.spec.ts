@@ -1,11 +1,12 @@
-import { parseBlueprint } from './router';
+import { parseBlueprint, PlaygroundRoute } from './router';
 import { decodeBlueprintHash } from './decode-blueprint-hash';
+import type { SiteInfo } from '../redux/slice-sites';
 
 const toBase64 = (s: string) =>
 	typeof btoa === 'function'
 		? btoa(s)
 		: // eslint-disable-next-line @typescript-eslint/no-explicit-any
-		  (globalThis as any).Buffer.from(s, 'utf-8').toString('base64');
+			(globalThis as any).Buffer.from(s, 'utf-8').toString('base64');
 
 // `parseBlueprint` reaches into `window.atob` via the existing
 // `decodeBase64ToString` helper. The default vitest environment for this
@@ -13,7 +14,9 @@ const toBase64 = (s: string) =>
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const g = globalThis as any;
 if (typeof g.window === 'undefined') {
-	g.window = { atob: (s: string) => Buffer.from(s, 'base64').toString('binary') };
+	g.window = {
+		atob: (s: string) => Buffer.from(s, 'base64').toString('binary'),
+	};
 }
 
 describe('decodeBlueprintHash', () => {
@@ -87,7 +90,9 @@ describe('parseBlueprint', () => {
 	});
 
 	it('throws a descriptive error for invalid JSON and includes the underlying message', () => {
-		expect(() => parseBlueprint('{not json')).toThrow(/Invalid blueprint\./);
+		expect(() => parseBlueprint('{not json')).toThrow(
+			/Invalid blueprint\./
+		);
 		expect(() => parseBlueprint('{not json')).toThrow(
 			/Invalid blueprint\.\s+\S/
 		);
@@ -96,5 +101,30 @@ describe('parseBlueprint', () => {
 	it('hints at double-encoding when the input still contains %XX escapes', () => {
 		const halfDecoded = '{"landingPage"%3A"/"}';
 		expect(() => parseBlueprint(halfDecoded)).toThrow(/double-encoded/);
+	});
+});
+
+describe('PlaygroundRoute.site', () => {
+	const savedSite = {
+		slug: 'storage-slug',
+		urlSlug: 'renamed-site',
+		metadata: {
+			storage: 'opfs',
+		},
+	} as SiteInfo;
+
+	it('uses a saved site urlSlug when present', () => {
+		expect(PlaygroundRoute.site(savedSite, 'https://example.com/')).toBe(
+			'https://example.com/?site-slug=renamed-site'
+		);
+	});
+
+	it('falls back to the storage slug when no urlSlug is present', () => {
+		expect(
+			PlaygroundRoute.site(
+				{ ...savedSite, urlSlug: undefined },
+				'https://example.com/'
+			)
+		).toBe('https://example.com/?site-slug=storage-slug');
 	});
 });

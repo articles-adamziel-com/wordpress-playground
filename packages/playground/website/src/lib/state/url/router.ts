@@ -58,7 +58,10 @@ export function parseBlueprint(rawData: string) {
  * base64-decode-then-parse error if the input looks base64-shaped,
  * otherwise the plain JSON.parse error.
  */
-function formatInvalidBlueprintError(rawData: string, errors: unknown[]): string {
+function formatInvalidBlueprintError(
+	rawData: string,
+	errors: unknown[]
+): string {
 	const looksLikeBase64 = /^[A-Za-z0-9+/=]+$/.test(rawData.trim());
 	const primary = looksLikeBase64 && errors[1] ? errors[1] : errors[0];
 	const detail =
@@ -97,8 +100,9 @@ export class PlaygroundRoute {
 					preserveParams[param] = baseParams.get(param);
 				}
 			}
+			const slugForUrl = site.urlSlug ?? site.slug;
 			return updateUrl(baseUrl, {
-				searchParams: { 'site-slug': site.slug, ...preserveParams },
+				searchParams: { 'site-slug': slugForUrl, ...preserveParams },
 				hash: '',
 			});
 		}
