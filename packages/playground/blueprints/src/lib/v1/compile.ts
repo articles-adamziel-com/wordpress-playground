@@ -6,6 +6,10 @@ import type { FileReference } from './resources';
 import { isResourceReference, Resource } from './resources';
 import type { Step, StepDefinition, WriteFileStep } from '../steps';
 import * as allStepHandlers from '../steps/handlers';
+import {
+	getPHPExtensionRuntimeConfig,
+	type LoadPHPExtensionStep,
+} from '../steps/load-php-extension';
 import type {
 	BlueprintV1Declaration,
 	ExtraLibrary,
@@ -101,6 +105,8 @@ export interface CompiledBlueprintV1 {
 		networking: boolean;
 	};
 	extraLibraries: ExtraLibrary[];
+	/** PHP extensions to install before the runtime starts. */
+	phpExtensions: Awaited<ReturnType<typeof getPHPExtensionRuntimeConfig>>[];
 	/** The compiled steps for the blueprint */
 	run: (playground: UniversalPHP) => Promise<void>;
 }
@@ -157,7 +163,7 @@ export async function compileBlueprintV1(
 		blueprint = input as BlueprintV1Declaration;
 	}
 
-	return compileBlueprintJson(blueprint, finalOptions);
+	return await compileBlueprintJson(blueprint, finalOptions);
 }
 
 export function isBlueprintBundle(input: any): input is BlueprintBundle {
@@ -183,7 +189,7 @@ export async function getBlueprintDeclaration(
  * @param options Additional options for the compilation
  * @returns The compiled blueprint
  */
-function compileBlueprintJson(
+async function compileBlueprintJson(
 	blueprint: BlueprintV1Declaration,
 	{
 		progress = new ProgressTracker(),
@@ -195,7 +201,7 @@ function compileBlueprintJson(
 		gitAdditionalHeadersCallback,
 		additionalSteps,
 	}: CompileBlueprintV1Options = {}
-): CompiledBlueprintV1 {
+): Promise<CompiledBlueprintV1> {
 	blueprint = structuredClone(blueprint);
 
 	blueprint = {
@@ -394,6 +400,12 @@ function compileBlueprintJson(
 			gitAdditionalHeadersCallback,
 		})
 	);
+	const phpExtensions = await resolvePHPExtensionSteps(steps, {
+		semaphore,
+		corsProxy,
+		streamBundledFile,
+		gitAdditionalHeadersCallback,
+	});
 
 	return {
 		versions: {
@@ -411,6 +423,7 @@ function compileBlueprintJson(
 			networking: blueprint.features?.networking ?? true,
 		},
 		extraLibraries: blueprint.extraLibraries || [],
+		phpExtensions,
 		run: async (playground: UniversalPHP) => {
 			try {
 				// Start resolving resources early
@@ -682,6 +695,63 @@ interface CompileStepArgsOptions {
 	gitAdditionalHeadersCallback?: (url: string) => Record<string, string>;
 }
 
+type ResourceOptions = Pick<
+	CompileStepArgsOptions,
+	| 'semaphore'
+	| 'corsProxy'
+	| 'streamBundledFile'
+	| 'gitAdditionalHeadersCallback'
+>;
+
+async function resolvePHPExtensionSteps(
+	steps: StepDefinition[],
+	options: ResourceOptions
+): Promise<CompiledBlueprintV1['phpExtensions']> {
+	const extensions = steps
+		.filter(isLoadPHPExtensionStep)
+		.map((step) => resolvePHPExtensionStep(step, options));
+	return await Promise.all(extensions);
+}
+
+async function resolvePHPExtensionStep(
+	step: LoadPHPExtensionStep<FileReference, any>,
+	{
+		semaphore,
+		corsProxy,
+		streamBundledFile,
+		gitAdditionalHeadersCallback,
+	}: ResourceOptions
+) {
+	const args: Record<string, unknown> = {};
+	for (const key of Object.keys(step)) {
+		const value = (step as any)[key];
+		if (isResourceReference(value)) {
+			if (value.resource === 'vfs') {
+				throw new InvalidBlueprintError(
+					'loadPHPExtension cannot use a VFS resource because PHP extensions must be resolved before the runtime starts.',
+					[]
+				);
+			}
+			args[key] = await Resource.create(value, {
+				semaphore,
+				corsProxy,
+				streamBundledFile,
+				gitAdditionalHeadersCallback,
+			}).resolve();
+		} else {
+			args[key] = value;
+		}
+	}
+	delete args['step'];
+	return await getPHPExtensionRuntimeConfig(args as any);
+}
+
+function isLoadPHPExtensionStep(
+	step: StepDefinition
+): step is LoadPHPExtensionStep<FileReference, any> & StepDefinition {
+	return step.step === 'loadPHPExtension';
+}
+
 /**
  * Compiles a single Blueprint step into a form that can be executed
  *
@@ -722,14 +792,13 @@ function compileStep<S extends StepDefinition>(
 	const run = async (playground: UniversalPHP) => {
 		try {
 			stepProgress.fillSlowly();
-			return await keyedStepHandlers[step.step](
-				playground,
-				await resolveArguments(args),
-				{
-					tracker: stepProgress,
-					initialCaption: step.progress?.caption,
-				}
-			);
+			const stepArgs = isLoadPHPExtensionStep(step)
+				? args
+				: await resolveArguments(args);
+			return await keyedStepHandlers[step.step](playground, stepArgs, {
+				tracker: stepProgress,
+				initialCaption: step.progress?.caption,
+			});
 		} finally {
 			stepProgress.finish();
 		}
@@ -739,10 +808,8 @@ function compileStep<S extends StepDefinition>(
 	 * The weight of each async resource is the same, and is the same as the
 	 * weight of the step itself.
 	 */
-	const resources = getResources(args);
-	const asyncResources = getResources(args).filter(
-		(resource) => resource.isAsync
-	);
+	const resources = isLoadPHPExtensionStep(step) ? [] : getResources(args);
+	const asyncResources = resources.filter((resource) => resource.isAsync);
 
 	const evenWeight = 1 / (asyncResources.length + 1);
 	for (const resource of asyncResources) {
@@ -854,9 +921,7 @@ function isGitRepoUrl(url: string): boolean {
 		return true;
 	}
 	// GitLab: /group[/subgroup...]/project (2+ path segments)
-	if (
-		/^https:\/\/gitlab\.com\/[^/]+\/[^/]+(\/[^/]+)*$/.test(normalizedUrl)
-	) {
+	if (/^https:\/\/gitlab\.com\/[^/]+\/[^/]+(\/[^/]+)*$/.test(normalizedUrl)) {
 		return true;
 	}
 	return false;

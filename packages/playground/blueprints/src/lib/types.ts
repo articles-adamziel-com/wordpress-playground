@@ -9,7 +9,37 @@ import type {
 	BlueprintV2,
 	BlueprintV2Declaration,
 } from './v2/blueprint-v2-declaration';
-import type { AllPHPVersion } from '@php-wasm/universal';
+import type {
+	AllPHPVersion,
+	PHPExtensionManifest,
+	ResolvedInstallOptions,
+} from '@php-wasm/universal';
+
+export type BlueprintPHPExtensionSource =
+	| {
+			format: 'so';
+			name?: string;
+			bytes: Uint8Array | ArrayBuffer;
+	  }
+	| {
+			format: 'url';
+			name?: string;
+			url: string;
+	  }
+	| {
+			format: 'manifest';
+			manifestUrl: string;
+	  }
+	| {
+			format: 'manifest';
+			manifest: PHPExtensionManifest;
+			baseUrl?: string;
+	  };
+
+export interface BlueprintPHPExtension
+	extends Omit<ResolvedInstallOptions, 'phpVersion' | 'fetch' | 'source'> {
+	source: BlueprintPHPExtensionSource;
+}
 
 /**
  * A filesystem structure containing a /blueprint.json file and any
@@ -28,5 +58,6 @@ export interface RuntimeConfiguration {
 	intl: boolean;
 	networking: boolean;
 	extraLibraries: ExtraLibrary[];
+	phpExtensions?: BlueprintPHPExtension[];
 	constants: PHPConstants;
 }

@@ -8,6 +8,7 @@ export type {
 	Blueprint,
 	BlueprintBundle,
 	BlueprintDeclaration,
+	BlueprintPHPExtension,
 	RuntimeConfiguration,
 } from './lib/types';
 export { BlueprintReflection } from './lib/reflection';

@@ -44,6 +44,48 @@ describe('Blueprints', () => {
 		);
 	});
 
+	it('should extract PHP extension steps into runtime configuration', async () => {
+		const compiled = await compileBlueprintV1({
+			preferredVersions: {
+				php: RecommendedPHPVersion,
+				wp: false,
+			},
+			steps: [
+				{
+					step: 'loadPHPExtension',
+					source: {
+						resource: 'literal',
+						name: 'example.so',
+						contents: 'abc',
+					},
+					extraFiles: {
+						resource: 'literal:directory',
+						name: 'example-assets',
+						files: {
+							'data.txt': 'sidecar',
+						},
+					},
+					extraFilesPath: '/internal/shared/example-assets',
+				},
+			],
+		});
+
+		expect(compiled.phpExtensions).toHaveLength(1);
+		const extension = compiled.phpExtensions[0];
+		expect(extension.source).toMatchObject({
+			format: 'so',
+			name: 'example',
+		});
+		expect(Array.from((extension.source as any).bytes)).toEqual([
+			97, 98, 99,
+		]);
+		expect(extension.extraFiles).toEqual({
+			files: {
+				'/internal/shared/example-assets/data.txt': 'sidecar',
+			},
+		});
+	});
+
 	it('should define the consts in a json and auto load the defined constants', async () => {
 		// Define the constants to be tested
 		const consts = {

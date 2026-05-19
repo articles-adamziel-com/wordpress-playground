@@ -19,6 +19,7 @@ export async function resolveRuntimeConfiguration(
 			intl: compiledBlueprint.features.intl,
 			networking: compiledBlueprint.features.networking,
 			extraLibraries: compiledBlueprint.extraLibraries,
+			phpExtensions: compiledBlueprint.phpExtensions,
 			/*
 			 * Constants don't matter so much for temporary sites so let's
 			 * use an empty object here. We can't easily figure out which
@@ -39,6 +40,7 @@ export async function resolveRuntimeConfiguration(
 			networking: true,
 			constants: {},
 			extraLibraries: [],
+			phpExtensions: [],
 		};
 	}
 }

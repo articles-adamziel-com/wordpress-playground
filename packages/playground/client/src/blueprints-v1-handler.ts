@@ -57,6 +57,7 @@ export class BlueprintsV1Handler {
 		const extensions: PHPWebExtension[] = runtimeConfiguration.intl
 			? ['intl']
 			: [];
+		extensions.push(...(runtimeConfiguration.phpExtensions || []));
 		extensions.push(...(this.options.extensions || []));
 		await playground.onDownloadProgress(downloadProgress.loadingListener);
 		// Blueprint's `preferredVersions.wp: false` is the declarative way to

@@ -198,7 +198,10 @@ export class BlueprintsV1Handler {
 			processId: worker.processId,
 			followSymlinks: this.args.followSymlinks === true,
 			trace: this.args.experimentalTrace === true,
-			extensions: cliExtensionArgsToExtensionsArray(this.args),
+			extensions: [
+				...(runtimeConfiguration.phpExtensions || []),
+				...cliExtensionArgsToExtensionsArray(this.args),
+			],
 			nativeInternalDirPath,
 			pathAliases: this.args.pathAliases,
 		});

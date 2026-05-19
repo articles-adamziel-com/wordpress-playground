@@ -896,6 +896,75 @@
 						},
 						"step": {
 							"type": "string",
+							"const": "loadPHPExtension"
+						},
+						"source": {
+							"$ref": "#/definitions/FileReference",
+							"description": "The extension `.so` file or a PHP extension `manifest.json`."
+						},
+						"sourceFormat": {
+							"$ref": "#/definitions/PHPExtensionSourceFormat",
+							"description": "Defaults to \"manifest\" for `.json` files and \"so\" otherwise."
+						},
+						"name": {
+							"type": "string",
+							"description": "Required when loading a `.so` file whose filename is not named after the extension."
+						},
+						"loadWithIniDirective": {
+							"$ref": "#/definitions/PHPExtensionLoadDirective",
+							"description": "Defaults to \"extension\". Use \"zend_extension\" for extensions like Xdebug."
+						},
+						"iniEntries": {
+							"type": "object",
+							"additionalProperties": {
+								"type": "string"
+							},
+							"description": "Extra `php.ini` entries to write next to the extension."
+						},
+						"extraFiles": {
+							"$ref": "#/definitions/DirectoryReference",
+							"description": "Extra files required by the extension, such as ICU data or shared libraries."
+						},
+						"extraFilesPath": {
+							"type": "string",
+							"description": "Where to write `extraFiles`. Defaults to an extension-specific assets directory."
+						},
+						"env": {
+							"type": "object",
+							"additionalProperties": {
+								"type": "string"
+							},
+							"description": "Runtime environment variables needed by the extension."
+						},
+						"manifestBaseUrl": {
+							"type": "string",
+							"description": "Base URL for relative artifact paths in an inline or bundled manifest."
+						},
+						"extensionDir": {
+							"type": "string",
+							"description": "Where to install the extension `.so` and `.ini` files."
+						}
+					},
+					"required": ["source", "step"]
+				},
+				{
+					"type": "object",
+					"additionalProperties": false,
+					"properties": {
+						"progress": {
+							"type": "object",
+							"properties": {
+								"weight": {
+									"type": "number"
+								},
+								"caption": {
+									"type": "string"
+								}
+							},
+							"additionalProperties": false
+						},
+						"step": {
+							"type": "string",
 							"const": "login"
 						},
 						"username": {
@@ -1503,6 +1572,26 @@
 				}
 			},
 			"additionalProperties": false
+		},
+		"PHPExtensionSourceFormat": {
+			"type": "string",
+			"enum": ["so", "manifest"]
+		},
+		"PHPExtensionLoadDirective": {
+			"anyOf": [
+				{
+					"$ref": "#/definitions/PHPExtensionIniDirective"
+				},
+				{
+					"type": "boolean",
+					"const": false
+				}
+			]
+		},
+		"PHPExtensionIniDirective": {
+			"type": "string",
+			"enum": ["extension", "zend_extension"],
+			"description": "The php.ini directive used to load the extension. Use `extension` for regular PHP extensions and `zend_extension` for Zend extensions like Xdebug."
 		},
 		"PHPRequest": {
 			"type": "object",
