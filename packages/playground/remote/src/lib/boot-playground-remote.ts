@@ -1,5 +1,4 @@
 import type { MessageListener } from '@php-wasm/universal';
-import { streamToPort } from '@php-wasm/universal';
 import type { SyncProgressCallback } from '@php-wasm/web';
 import {
 	spawnPHPWorkerThread,
@@ -26,6 +25,7 @@ import type { FilesystemOperation } from '@php-wasm/fs-journal';
 import { logger } from '@php-wasm/logger';
 import { PhpWasmError } from '@php-wasm/util';
 import { responseTo } from '@php-wasm/web-service-worker';
+import { serializeStreamedResponseForServiceWorker } from './service-worker-response';
 
 // Select worker runtime (v1 or v2) based on query parameter
 // @ts-ignore
@@ -449,9 +449,6 @@ export async function bootPlaygroundRemote() {
 						const streamedResponse = await (
 							phpWorkerApi.requestStreamed as any
 						)(...args);
-						const httpStatusCode =
-							await streamedResponse.httpStatusCode;
-						const headers = await streamedResponse.headers;
 
 						/**
 						 * ReadableStreams are transferable, but cannot be
@@ -468,15 +465,18 @@ export async function bootPlaygroundRemote() {
 						 * * https://github.com/whatwg/streams/issues/1063
 						 * * https://github.com/whatwg/streams/issues/276
 						 * * https://groups.google.com/a/chromium.org/g/chromium-discuss/c/90Esr_dE6U4
+						 *
+						 * HTML responses are intentionally buffered instead
+						 * of bridged through a MessagePort so the browser can
+						 * inspect the document body during navigation.
 						 */
-						const bodyPort = streamToPort(streamedResponse.stdout);
+						const { response, transfer } =
+							await serializeStreamedResponseForServiceWorker(
+								streamedResponse
+							);
 						(event.source! as ServiceWorker).postMessage(
-							responseTo(event.data.requestId, {
-								httpStatusCode,
-								headers,
-								bodyPort,
-							}),
-							[bodyPort]
+							responseTo(event.data.requestId, response),
+							transfer
 						);
 					} else {
 						// eslint-disable-next-line @typescript-eslint/no-unsafe-function-type

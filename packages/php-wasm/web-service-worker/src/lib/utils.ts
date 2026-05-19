@@ -141,17 +141,17 @@ export async function convertFetchEventToPHPRequest(event: FetchEvent) {
 
 	let responseBody: ReadableStream<Uint8Array> | Uint8Array | null = null;
 	if (!isNullBodyCode) {
-		if (
-			phpResponse.bodyPort &&
-			!isHtmlContentType(phpResponse.headers['content-type'])
-		) {
+		const isHtmlResponse = isHtmlContentType(
+			phpResponse.headers['content-type']
+		);
+		if (phpResponse.bodyPort && (!isHtmlResponse || !phpResponse.bytes)) {
 			// Reconstruct the body ReadableStream from the MessagePort.
 			// We couldn't just transfer it directly as this kind of transfer
 			// doesn't seem to be supported between the document and the service worker.
 			responseBody = portToStream(phpResponse.bodyPort);
 		} else {
 			// Fallback: buffered response bytes
-			responseBody = phpResponse.bytes;
+			responseBody = phpResponse.bytes ?? new Uint8Array();
 		}
 	}
 

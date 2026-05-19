@@ -51,9 +51,7 @@ describe('isHtmlContentType', () => {
 
 	it('accepts an array of content type values', () => {
 		expect(isHtmlContentType(['text/html'])).toBe(true);
-		expect(isHtmlContentType(['application/json', 'text/html'])).toBe(
-			true
-		);
+		expect(isHtmlContentType(['application/json', 'text/html'])).toBe(true);
 	});
 
 	it('returns false for non-HTML content types', () => {
