@@ -141,7 +141,10 @@ export async function convertFetchEventToPHPRequest(event: FetchEvent) {
 
 	let responseBody: ReadableStream<Uint8Array> | Uint8Array | null = null;
 	if (!isNullBodyCode) {
-		if (phpResponse.bodyPort) {
+		if (
+			phpResponse.bodyPort &&
+			!isHtmlContentType(phpResponse.headers['content-type'])
+		) {
 			// Reconstruct the body ReadableStream from the MessagePort.
 			// We couldn't just transfer it directly as this kind of transfer
 			// doesn't seem to be supported between the document and the service worker.
@@ -320,6 +323,18 @@ export function getRequestHeaders(request: Request) {
 		headers[key] = value;
 	});
 	return headers;
+}
+
+export function isHtmlContentType(
+	contentType: string | string[] | undefined | null
+) {
+	const values = Array.isArray(contentType) ? contentType : [contentType];
+	return values.some((value) => {
+		if (!value) {
+			return false;
+		}
+		return value.split(';', 1)[0].trim().toLowerCase() === 'text/html';
+	});
 }
 
 /**
