@@ -37,6 +37,7 @@ export class WebSocketShim {
 	onerror: ((e: any) => void) | null = null;
 
 	listeners = new Map<string, Set<(...args: any[]) => void>>();
+	nodeListeners = new Map<string, Set<(...args: any[]) => void>>();
 
 	constructor(url = '') {
 		this.url = url;
@@ -58,19 +59,24 @@ export class WebSocketShim {
 
 	// Node `ws`-style listener API
 	on(event: string, fn: (...args: any[]) => void) {
-		this.addEventListener(event, fn);
+		let set = this.nodeListeners.get(event);
+		if (!set) {
+			set = new Set();
+			this.nodeListeners.set(event, set);
+		}
+		set.add(fn);
 	}
 
 	once(event: string, fn: (...args: any[]) => void) {
 		const wrapped = (...args: any[]) => {
-			this.removeEventListener(event, wrapped);
+			this.removeListener(event, wrapped);
 			fn(...args);
 		};
-		this.addEventListener(event, wrapped);
+		this.on(event, wrapped);
 	}
 
 	removeListener(event: string, fn: (...args: any[]) => void) {
-		this.removeEventListener(event, fn);
+		this.nodeListeners.get(event)?.delete(fn);
 	}
 
 	emitOpen() {
@@ -78,6 +84,8 @@ export class WebSocketShim {
 		this.onopen?.({});
 		const set = this.listeners.get('open');
 		if (set) for (const fn of set) fn({});
+		const nodeSet = this.nodeListeners.get('open');
+		if (nodeSet) for (const fn of nodeSet) fn({});
 	}
 
 	/**
@@ -87,11 +95,15 @@ export class WebSocketShim {
 	 * (the `ws` library convention) and expects `(data, isBinary)`.
 	 */
 	emitMessage(data: Uint8Array | ArrayBuffer | string) {
-		this.onmessage?.({ data });
+		const event = { data };
+		this.onmessage?.(event);
 		const set = this.listeners.get('message');
-		if (!set) return;
+		if (set) for (const fn of set) fn(event);
+
+		const nodeSet = this.nodeListeners.get('message');
+		if (!nodeSet) return;
 		const isBinary = typeof data !== 'string';
-		for (const fn of set) {
+		for (const fn of nodeSet) {
 			fn(data, isBinary);
 		}
 	}
@@ -101,12 +113,16 @@ export class WebSocketShim {
 		this.onclose?.({});
 		const set = this.listeners.get('close');
 		if (set) for (const fn of set) fn({});
+		const nodeSet = this.nodeListeners.get('close');
+		if (nodeSet) for (const fn of nodeSet) fn({});
 	}
 
 	emitError(err: any) {
 		this.onerror?.(err);
 		const set = this.listeners.get('error');
 		if (set) for (const fn of set) fn(err);
+		const nodeSet = this.nodeListeners.get('error');
+		if (nodeSet) for (const fn of nodeSet) fn(err);
 	}
 
 	// To be overridden by subclasses.

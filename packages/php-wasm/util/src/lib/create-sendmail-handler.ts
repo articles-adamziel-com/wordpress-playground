@@ -94,7 +94,7 @@ export function createSendmailSpawnHandler(
 				headers: parsed.headers,
 				text: parsed.text,
 				raw,
-				rawSize: raw.length,
+				rawSize: new TextEncoder().encode(raw).byteLength,
 			};
 
 			onEmail(message);
