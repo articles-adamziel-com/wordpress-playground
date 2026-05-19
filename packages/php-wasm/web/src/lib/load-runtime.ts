@@ -8,7 +8,9 @@ import {
 	createLegacyPhpIniPreRunStep,
 	isLegacyPHPVersion,
 	loadPHPRuntime,
+	withSMTPSink,
 } from '@php-wasm/universal';
+import type { CaughtMessage } from '@php-wasm/util';
 import { getPHPLoaderModule } from './get-php-loader-module';
 import type { TCPOverFetchOptions } from './tcp-over-fetch-websocket';
 import { tcpOverFetchWebsocket } from './tcp-over-fetch-websocket';
@@ -33,6 +35,10 @@ export interface LoaderOptions {
 	 * @deprecated Use `extensions: ['intl']` instead.
 	 */
 	withIntl?: boolean;
+	withSMTPSink?: {
+		port: number;
+		onEmail: (message: CaughtMessage) => void;
+	};
 }
 
 /**
@@ -94,6 +100,12 @@ export async function loadWebRuntime(
 		emscriptenOptions = tcpOverFetchWebsocket(
 			emscriptenOptions,
 			loaderOptions.tcpOverFetch
+		);
+	}
+	if (loaderOptions.withSMTPSink) {
+		emscriptenOptions = withSMTPSink(
+			loaderOptions.withSMTPSink,
+			await emscriptenOptions
 		);
 	}
 

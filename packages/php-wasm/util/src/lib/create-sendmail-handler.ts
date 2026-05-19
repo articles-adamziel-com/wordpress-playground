@@ -1,0 +1,127 @@
+import { createSpawnHandler } from './create-spawn-handler';
+import { parseMessage } from './smtp';
+import type { CaughtMessage } from './smtp';
+
+/**
+ * Intercepts PHP's mail() function and routes the outgoing message to
+ * `onEmail`.
+ *
+ * PHP's mail() pipes a fully-formed message to the program in php.ini's
+ * `sendmail_path`, which defaults to `/usr/sbin/sendmail -t -i`. The `-t`
+ * means a real sendmail would read recipients from the To/Cc/Bcc headers,
+ * and this handler relies on that - it always extracts recipients from the
+ * headers rather than from command-line arguments.
+ *
+ * Any command whose binary basename is `sendmail` is matched. Other
+ * commands are forwarded to `fallbackSpawnHandler` if provided, otherwise
+ * they throw.
+ */
+const DEFAULT_MAX_SIZE = 10 * 1024 * 1024; // 10 MB, same as SmtpSink
+
+export function createSendmailSpawnHandler(
+	onEmail: (message: CaughtMessage) => void,
+	fallbackSpawnHandler?: (
+		command: any,
+		argsArray?: any,
+		options?: any
+	) => any,
+	{ maxSize = DEFAULT_MAX_SIZE }: { maxSize?: number } = {}
+) {
+	const sendmailHandler = createSpawnHandler(
+		async function (command, processApi) {
+			let envelopeSender = '';
+			for (let i = 1; i < command.length; i++) {
+				if (command[i] === '-f' && i + 1 < command.length) {
+					envelopeSender = command[++i];
+				} else if (
+					command[i].startsWith('-f') &&
+					command[i].length > 2
+				) {
+					envelopeSender = command[i].slice(2);
+				}
+			}
+
+			const chunks: Uint8Array[] = [];
+			let totalLen = 0;
+			let overflow = false;
+			const stdinDone = new Promise<void>((resolve) => {
+				processApi.childProcess.stdin.on('finish', resolve);
+			});
+			processApi.on('stdin', (data: Uint8Array) => {
+				if (overflow) return;
+				totalLen += data.length;
+				if (totalLen > maxSize) {
+					overflow = true;
+					chunks.length = 0;
+					return;
+				}
+				chunks.push(data.slice());
+			});
+
+			await stdinDone;
+
+			if (overflow) {
+				processApi.stderr(
+					`sendmail: message exceeds maximum size (${maxSize} bytes)\n`
+				);
+				processApi.exit(1);
+				return;
+			}
+
+			const all = new Uint8Array(totalLen);
+			let offset = 0;
+			for (const c of chunks) {
+				all.set(c, offset);
+				offset += c.length;
+			}
+			const rawText = new TextDecoder().decode(all);
+
+			if (!rawText.trim()) {
+				processApi.exit(0);
+				return;
+			}
+
+			// Normalize line endings to CRLF for the email parsers
+			const raw = rawText.replace(/\r?\n/g, '\r\n');
+
+			const parsed = parseMessage(raw, envelopeSender, []);
+
+			const message: CaughtMessage = {
+				receivedAt: new Date().toISOString(),
+				from: parsed.from,
+				to: parsed.to,
+				subject: parsed.subject,
+				headers: parsed.headers,
+				text: parsed.text,
+				raw,
+				rawSize: raw.length,
+			};
+
+			onEmail(message);
+
+			processApi.exit(0);
+		}
+	);
+
+	return function (
+		command: string | string[],
+		argsArray: string[] = [],
+		options: any = {}
+	) {
+		const cmdStr = Array.isArray(command)
+			? command[0]
+			: typeof command === 'string'
+				? command.split(/\s+/)[0]
+				: '';
+		const bin = cmdStr.split('/').pop() || '';
+		if (bin !== 'sendmail') {
+			if (fallbackSpawnHandler) {
+				return fallbackSpawnHandler(command, argsArray, options);
+			}
+			throw new Error(
+				`createSendmailSpawnHandler: not a sendmail command: ${cmdStr}`
+			);
+		}
+		return sendmailHandler(command, argsArray, options);
+	};
+}

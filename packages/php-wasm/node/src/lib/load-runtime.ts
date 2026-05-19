@@ -10,6 +10,7 @@ import {
 	createLegacyPhpIniPreRunStep,
 	isLegacyPHPVersion,
 	ProcessIdAllocator,
+	withSMTPSink,
 } from '@php-wasm/universal';
 import type { WasmUserSpaceAPI, WasmUserSpaceContext } from './wasm-user-space';
 import { bindUserSpace } from './wasm-user-space';
@@ -23,7 +24,12 @@ import {
 	type PHPExtension,
 	type XdebugOptions,
 } from './extensions/load-extensions';
-import { dirname, joinPaths, toPosixPath } from '@php-wasm/util';
+import {
+	dirname,
+	joinPaths,
+	toPosixPath,
+	type CaughtMessage,
+} from '@php-wasm/util';
 import { platform } from 'os';
 import { jspi } from 'wasm-feature-detect';
 
@@ -53,6 +59,10 @@ export interface PHPLoaderOptions {
 	 * @deprecated Use `extensions: ['memcached']` instead.
 	 */
 	withMemcached?: boolean;
+	withSMTPSink?: {
+		port: number;
+		onEmail: (message: CaughtMessage) => void;
+	};
 }
 
 export type PHPLoaderOptionsForNode = PHPLoaderOptions & {
@@ -376,6 +386,12 @@ export async function loadNodeRuntime(
 	}
 
 	emscriptenOptions = await withNetworking(emscriptenOptions);
+	if (options.withSMTPSink) {
+		emscriptenOptions = withSMTPSink(
+			options.withSMTPSink,
+			emscriptenOptions
+		);
+	}
 
 	const phpLoaderModule = await getPHPLoaderModule(phpVersion);
 
