@@ -25,7 +25,7 @@ import { logger } from '@php-wasm/logger';
 import { setActiveSiteError, type SiteError } from './slice-ui';
 import { RecommendedPHPVersion } from '@wp-playground/common';
 import { findFirewallErrorInCauseChain } from './error-utils';
-import { siteMatchesUrlSlug } from './site-url-slug';
+import { deriveUrlSlugFromSiteName, siteMatchesUrlSlug } from './site-url-slug';
 
 /**
  * The Site model used to represent a site within Playground.
@@ -122,7 +122,7 @@ export const getSitesLoadingState = (state: {
 }) => state.sites.opfsSitesLoadingState;
 
 export function deriveSlugFromSiteName(name: string) {
-	return name.toLowerCase().replaceAll(' ', '-');
+	return deriveUrlSlugFromSiteName(name);
 }
 export function deriveSiteNameFromSlug(slug: string) {
 	return slug

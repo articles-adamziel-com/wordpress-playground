@@ -13,10 +13,12 @@ import {
 	removeSite,
 	setTemporarySiteSpec,
 	deriveSiteNameFromSlug,
-	deriveSlugFromSiteName,
 } from './slice-sites';
 import { PlaygroundRoute, redirectTo } from '../url/router';
-import { siteMatchesUrlSlug } from './site-url-slug';
+import {
+	assertUrlSlugIsAvailable,
+	deriveUrlSlugFromSiteName,
+} from './site-url-slug';
 import { randomSiteName } from './random-site-name';
 import { persistTemporarySite } from './persist-temporary-site';
 import { selectClientBySiteSlug } from './slice-clients';
@@ -191,21 +193,18 @@ export function createSitesAPI(
 					'Cannot rename a temporary site. Save it first.'
 				);
 			}
-			const urlSlug = deriveSlugFromSiteName(newName);
-			const duplicateSite = selectAllSites(getState()).find(
-				(otherSite) =>
-					otherSite.slug !== site.slug &&
-					siteMatchesUrlSlug(otherSite, urlSlug)
+			const trimmedName = newName.trim();
+			const urlSlug = deriveUrlSlugFromSiteName(trimmedName);
+			assertUrlSlugIsAvailable(
+				selectAllSites(getState()),
+				urlSlug,
+				site.slug,
+				'Cannot rename site'
 			);
-			if (duplicateSite) {
-				throw new Error(
-					`Cannot rename site. URL slug '${urlSlug}' is already in use.`
-				);
-			}
 			await dispatch(
 				updateSiteMetadata({
 					slug: site.slug,
-					changes: { name: newName },
+					changes: { name: trimmedName },
 					urlSlug,
 				})
 			);

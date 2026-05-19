@@ -15,6 +15,8 @@ import type { PlaygroundReduxState } from './store';
 import type store from './store';
 import { selectClientBySiteSlug, updateClientInfo } from './slice-clients';
 import {
+	deriveSlugFromSiteName,
+	selectAllSites,
 	selectSiteBySlug,
 	updateSite,
 	updateSiteMetadata,
@@ -22,6 +24,7 @@ import {
 import { PlaygroundRoute, redirectTo } from '../url/router';
 import type { SiteStorageType } from './slice-sites';
 import { setActiveModal } from './slice-ui';
+import { assertUrlSlugIsAvailable } from './site-url-slug';
 
 export function persistTemporarySite(
 	siteSlug: string,
@@ -49,11 +52,22 @@ export function persistTemporarySite(
 			throw new Error(`Cannot find site ${siteSlug} to save.`);
 		}
 		const trimmedName = options.siteName?.trim();
+		let urlSlug = siteInfo.urlSlug ?? siteInfo.slug;
+		if (trimmedName) {
+			urlSlug = deriveSlugFromSiteName(trimmedName);
+			assertUrlSlugIsAvailable(
+				selectAllSites(getState()),
+				urlSlug,
+				siteSlug,
+				'Cannot save site'
+			);
+		}
 		if (trimmedName && trimmedName !== siteInfo.metadata.name) {
 			await dispatch(
 				updateSiteMetadata({
 					slug: siteSlug,
 					changes: { name: trimmedName },
+					urlSlug,
 				})
 			);
 			siteInfo = selectSiteBySlug(getState(), siteSlug)!;
@@ -73,13 +87,17 @@ export function persistTemporarySite(
 				throw error;
 			}
 		}
-		await opfsSiteStorage?.create(siteInfo.slug, {
-			...siteInfo.metadata,
-			// Start with storage type of 'none' to represent a temporary site
-			// that the site is being saved. This will help us distinguish
-			// between successful and failed saves.
-			storage: 'none',
-		});
+		await opfsSiteStorage?.create(
+			siteInfo.slug,
+			{
+				...siteInfo.metadata,
+				// Start with storage type of 'none' to represent a temporary site
+				// that the site is being saved. This will help us distinguish
+				// between successful and failed saves.
+				storage: 'none',
+			},
+			urlSlug
+		);
 
 		// Persist the blueprint bundle if available.
 		// First, check if originalBlueprint is already a filesystem (from clicking "Run Blueprint").
@@ -245,6 +263,7 @@ export function persistTemporarySite(
 						: {}),
 					...(trimmedName ? { name: trimmedName } : {}),
 				},
+				urlSlug,
 			})
 		);
 		/**
