@@ -17,10 +17,17 @@ export type SerializedServiceWorkerPHPResponse = {
 /**
  * Serializes a streamed PHP response for transfer to the service worker.
  *
- * The remote iframe cannot transfer a ReadableStream directly, so most
- * responses are bridged through a MessagePort. HTML navigations are buffered
- * instead because browsers expect the navigation document body to be complete
- * when the service worker resolves the fetch response.
+ * Most responses are kept as streams, just wrapped in a MessagePort
+ * since ReadableStream is not directly transferrable to the remote.html iframe.
+ *
+ * HTML responses, however, are buffered. Otherwise the browser may assume
+ * the HTML elements are intentionally provided over time and apply a
+ * confusing "gradual fade-in" effect when view transitions are enabled.
+ * It's bad UX. A single all-or-nothing transition feels a lot better.
+ * Therefore, we wait until the entire HTML body is available and expose
+ * it all at once.
+ *
+ * @see https://github.com/WordPress/wordpress-playground/issues/3436
  */
 export async function serializeStreamedResponseForServiceWorker(
 	streamedResponse: StreamedPHPResponse
@@ -29,8 +36,7 @@ export async function serializeStreamedResponseForServiceWorker(
 	const headers = await streamedResponse.headers;
 
 	if (isHtmlContentType(headers['content-type'])) {
-		// Buffer HTML documents so navigation requests receive a complete body
-		// instead of a MessagePort-backed stream.
+		// Buffer HTML responses for a nice full-page view transition.
 		const bytes = await streamedResponse.stdoutBytes;
 		const transfer =
 			bytes.byteLength > 0 && bytes.buffer instanceof ArrayBuffer
