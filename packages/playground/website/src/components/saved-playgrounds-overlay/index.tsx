@@ -69,6 +69,28 @@ function PullRequestIcon() {
 	);
 }
 
+// Git branch icon from Feather Icons
+function GitBranchIcon() {
+	return (
+		<svg
+			width="16"
+			height="16"
+			viewBox="0 0 24 24"
+			fill="none"
+			stroke="currentColor"
+			strokeWidth="2"
+			strokeLinecap="round"
+			strokeLinejoin="round"
+		>
+			<line x1="6" y1="3" x2="6" y2="15"></line>
+			<circle cx="18" cy="6" r="3"></circle>
+			<circle cx="6" cy="18" r="3"></circle>
+			<path d="M18 9a9 9 0 0 1-9 9"></path>
+		</svg>
+	);
+}
+
+// 3x3 grid icon from Bootstrap Icons (grid-3x3-gap-fill)
 function GridIcon({ size = 20 }: { size?: number }) {
 	return (
 		<svg width={size} height={size} viewBox="0 0 16 16" fill="currentColor">
@@ -317,6 +339,15 @@ export function SavedPlaygroundsOverlay({
 					switchToTemporarySite();
 				}
 				modalDispatch(setActiveModal(modalSlugs.GITHUB_IMPORT));
+			},
+			disabled: offline,
+		},
+		{
+			id: 'git-repo',
+			title: 'Git Repository',
+			iconComponent: <GitBranchIcon />,
+			onClick: () => {
+				modalDispatch(setActiveModal(modalSlugs.GIT_REPO_IMPORT));
 			},
 			disabled: offline,
 		},
