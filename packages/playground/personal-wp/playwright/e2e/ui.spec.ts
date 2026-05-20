@@ -90,6 +90,6 @@ test('should navigate within WordPress from Site Tools shortcuts', async ({
 	).toBeVisible();
 
 	await website.page.getByRole('button', { name: 'Homepage' }).click();
-	await expect(website.page).toHaveURL(/\/$/);
-	await expect(wordpress.locator('p.wp-block-site-title')).toBeVisible();
+	await expect(website.page).toHaveURL(/\/my-apps\/$/);
+	await expect(wordpress.locator('body')).toContainText('My Apps');
 });

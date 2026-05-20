@@ -42,3 +42,6 @@ runs:
         - name: Reset NX cache
           shell: bash
           run: npx nx reset
+        - name: Reset Vite cache
+          shell: bash
+          run: rm -rf node_modules/.vite

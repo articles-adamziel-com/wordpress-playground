@@ -70,6 +70,25 @@ export default defineConfig(({ mode }) => {
 			'*.zip',
 		],
 		cacheDir: '../../../node_modules/.vite/playground',
+		// Personal WP serves this app through another Vite dev server. Pre-bundle
+		// the runtime deps before the first browser request to avoid optimizer
+		// reloads while WordPress is booting in the iframe.
+		optimizeDeps: {
+			include: [
+				'@zip.js/zip.js',
+				'async-lock',
+				'buffer',
+				'crc-32',
+				'diff3',
+				'ignore',
+				'ini',
+				'octokit',
+				'pako',
+				'pify',
+				'sha.js/sha1.js',
+				'wasm-feature-detect',
+			],
+		},
 		// Bundled WordPress files live in a separate dependency-free `wordpress`
 		// package so that every package may use them without causing circular
 		// dependencies.
