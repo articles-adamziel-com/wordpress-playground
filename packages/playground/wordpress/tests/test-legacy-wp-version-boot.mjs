@@ -84,6 +84,7 @@ const WP_VERSIONS = [
 
 const PORT = 5400;
 const TIMEOUT_S = 120;
+const PLUGIN_ACTIVATION_TIMEOUT_S = 90;
 const results = [];
 
 /**
@@ -262,6 +263,7 @@ async function waitForPluginActivation(
 	timeoutSeconds = 60
 ) {
 	const deadline = Date.now() + timeoutSeconds * 1000;
+	let lastChanged = null;
 	while (Date.now() < deadline) {
 		await page.waitForTimeout(500);
 		for (const frame of page.frames()) {
@@ -273,18 +275,99 @@ async function waitForPluginActivation(
 				const changed =
 					frame.url() !== previousFrameUrl || body !== previousBody;
 				if (!changed) continue;
-				if (
-					body.includes('Plugin activated') ||
-					body.includes('Deactivate') ||
-					body.includes('Are you sure') ||
-					findPHPError(body)
-				) {
-					return { body, frame };
+				lastChanged = { body, frame };
+				if (await hasPluginActivationResult(body, frame)) {
+					return lastChanged;
 				}
 			} catch {}
 		}
 	}
+	return lastChanged;
+}
+
+async function hasPluginDeactivateLink(frame) {
+	try {
+		const helloDeactivate = frame
+			.locator('a[href*="hello.php"]')
+			.filter({ hasText: /^Deactivate$/ })
+			.first();
+		if ((await helloDeactivate.count()) > 0) {
+			return true;
+		}
+		return (
+			(await frame
+				.locator('a')
+				.filter({ hasText: /^Deactivate$/ })
+				.count()) > 0
+		);
+	} catch {
+		return false;
+	}
+}
+
+async function hasPluginActivated(wpPage) {
+	return (
+		wpPage.body.includes('Plugin activated') ||
+		(await hasPluginDeactivateLink(wpPage.frame))
+	);
+}
+
+async function hasPluginActivationResult(body, frame) {
+	return (
+		body.includes('Plugin activated') ||
+		(await hasPluginDeactivateLink(frame)) ||
+		body.includes('Are you sure') ||
+		findPHPError(body)
+	);
+}
+
+async function findPluginActivateLink(frame) {
+	// Wait for any Activate link to render — navigateViaUrlBar returns as soon
+	// as plugins.php has *any* body text, which on slow CI boots can be just
+	// the admin shell before the plugin list renders.
+	const anyActivate = frame
+		.locator('a')
+		.filter({ hasText: 'Activate' })
+		.first();
+	try {
+		await anyActivate.waitFor({
+			state: 'visible',
+			timeout: 15000,
+		});
+	} catch {}
+
+	const helloActivate = frame
+		.locator('a[href*="hello.php"]')
+		.filter({ hasText: 'Activate' })
+		.first();
+	if ((await helloActivate.count()) > 0) {
+		return helloActivate;
+	}
+	if ((await anyActivate.count()) > 0) {
+		return anyActivate;
+	}
 	return null;
+}
+
+async function clickPluginActivateLink(page, wpPage) {
+	const activateLink = await findPluginActivateLink(wpPage.frame);
+	if (!activateLink) {
+		return { found: false, page: null };
+	}
+
+	const bodyBeforeActivation = await wpPage.frame
+		.locator('body')
+		.innerText({ timeout: 2000 })
+		.catch(() => wpPage.body);
+	const prevFrameUrl = wpPage.frame.url();
+	await activateLink.click({ timeout: 5000 });
+	const activatedPage = await waitForPluginActivation(
+		page,
+		prevFrameUrl,
+		bodyBeforeActivation,
+		PLUGIN_ACTIVATION_TIMEOUT_S
+	);
+	return { found: true, page: activatedPage };
 }
 
 /**
@@ -693,47 +776,55 @@ for (const { wp, php } of MATRIX) {
 					// Fall back to the first Activate link for very old WP
 					// where Hello Dolly may not be present or the href
 					// format differs.
-					// Wait for any Activate link to render — navigateViaUrlBar
-					// returns as soon as plugins.php has *any* body text, which
-					// on slow CI boots can be just the admin shell before the
-					// plugin list renders.
-					const anyActivate = wp4.frame
-						.locator('a')
-						.filter({ hasText: 'Activate' })
-						.first();
-					try {
-						await anyActivate.waitFor({
-							state: 'visible',
-							timeout: 15000,
-						});
-					} catch {}
-					const helloActivate = wp4.frame
-						.locator('a[href*="hello.php"]')
-						.filter({ hasText: 'Activate' })
-						.first();
-					const activateLink =
-						(await helloActivate.count()) > 0
-							? helloActivate
-							: anyActivate;
-					if ((await activateLink.count()) > 0) {
-						const bodyBeforeActivation = await wp4.frame
-							.locator('body')
-							.innerText({ timeout: 2000 })
-							.catch(() => wp4.body);
-						const prevFrameUrl = wp4.frame.url();
-						await activateLink.click({ timeout: 5000 });
-						const wp4b = await waitForPluginActivation(
+					let pluginsPage = wp4;
+					let wp4b = null;
+					let foundActivateLink = false;
+					for (let attempt = 0; attempt < 2; attempt++) {
+						const activation = await clickPluginActivateLink(
 							page,
-							prevFrameUrl,
-							bodyBeforeActivation
+							pluginsPage
 						);
+						foundActivateLink ||= activation.found;
+						wp4b = activation.page || wp4b;
+
+						if (
+							activation.page &&
+							(await hasPluginActivationResult(
+								activation.page.body,
+								activation.page.frame
+							))
+						) {
+							break;
+						}
+
+						const refreshedPluginsPage = await navigateViaUrlBar(
+							page,
+							'/wp-admin/plugins.php',
+							30
+						);
+						if (
+							refreshedPluginsPage &&
+							(await hasPluginActivated(refreshedPluginsPage))
+						) {
+							wp4b = refreshedPluginsPage;
+							break;
+						}
+
+						if (attempt === 0 && refreshedPluginsPage) {
+							pluginsPage = refreshedPluginsPage;
+							wp4b = refreshedPluginsPage;
+							continue;
+						}
+
+						wp4b = refreshedPluginsPage || wp4b;
+						break;
+					}
+					if (foundActivateLink) {
 						if (!wp4b) {
 							pluginStatus = { status: 'TIMEOUT' };
 						} else {
 							const error = findPHPError(wp4b.body);
-							const ok =
-								wp4b.body.includes('Plugin activated') ||
-								wp4b.body.includes('Deactivate');
+							const ok = await hasPluginActivated(wp4b);
 							const bad = wp4b.body.includes('Are you sure');
 							if (error) {
 								pluginStatus = {
