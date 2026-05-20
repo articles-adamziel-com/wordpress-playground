@@ -1,3 +1,4 @@
+import type { CSSProperties, PointerEvent as ReactPointerEvent } from 'react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import css from './style.module.css';
 import 'xterm/css/xterm.css';
@@ -5,6 +6,8 @@ import { Terminal } from 'xterm';
 import { FitAddon } from 'xterm-addon-fit';
 import { splitShellCommand } from '@php-wasm/util';
 import type { StreamedPHPResponse } from '@php-wasm/universal';
+import { Icon } from '@wordpress/components';
+import { close } from '@wordpress/icons';
 import {
 	getActiveClientInfo,
 	useAppDispatch,
@@ -14,6 +17,9 @@ import { setWpCliConsoleOpen } from '../../lib/state/redux/slice-ui';
 
 const WP_CLI_PATH = '/tmp/wp-cli.phar';
 const WP_CLI_URL = 'https://playground.wordpress.net/wp-cli.phar';
+const DEFAULT_PANEL_HEIGHT = 360;
+const MIN_PANEL_HEIGHT = 220;
+const PANEL_MARGIN = 72;
 
 function writeTerminalText(term: Terminal, text: string) {
 	term.write(text.replace(/\r?\n/g, '\r\n'));
@@ -52,6 +58,7 @@ export function WpCliConsole() {
 	const playground = clientInfo?.client;
 	const dispatch = useAppDispatch();
 
+	const wrapperRef = useRef<HTMLDivElement>(null);
 	const terminalContainer = useRef<HTMLDivElement>(null);
 	const terminalRef = useRef<Terminal>();
 	const fitAddonRef = useRef<FitAddon>();
@@ -63,6 +70,17 @@ export function WpCliConsole() {
 	const currentHistoryEntry = useRef(-1);
 	const [downloading, setDownloading] = useState(false);
 	const [downloadProgress, setDownloadProgress] = useState<number>();
+	const [panelHeight, setPanelHeight] = useState(DEFAULT_PANEL_HEIGHT);
+
+	const closeConsole = useCallback(() => {
+		dispatch(setWpCliConsoleOpen(false));
+	}, [dispatch]);
+
+	const fitTerminal = useCallback(() => {
+		requestAnimationFrame(() => {
+			fitAddonRef.current?.fit();
+		});
+	}, []);
 
 	const ensureWpCli = useCallback(async () => {
 		if (!playground) {
@@ -233,7 +251,7 @@ export function WpCliConsole() {
 						break;
 					case 'exit':
 					case 'quit':
-						dispatch(setWpCliConsoleOpen(false));
+						closeConsole();
 						break;
 					case 'wp':
 						await runWpCli(args);
@@ -253,7 +271,7 @@ export function WpCliConsole() {
 				isRunningCommand.current = false;
 			}
 		},
-		[dispatch, runWpCli]
+		[closeConsole, runWpCli]
 	);
 
 	useEffect(() => {
@@ -373,11 +391,15 @@ export function WpCliConsole() {
 	useEffect(() => {
 		if (isOpen) {
 			window.setTimeout(() => {
-				fitAddonRef.current?.fit();
+				fitTerminal();
 				terminalRef.current?.focus();
 			}, 0);
 		}
-	}, [isOpen]);
+	}, [fitTerminal, isOpen]);
+
+	useEffect(() => {
+		fitTerminal();
+	}, [fitTerminal, panelHeight]);
 
 	useEffect(() => {
 		const onKeyDown = (event: KeyboardEvent) => {
@@ -389,12 +411,85 @@ export function WpCliConsole() {
 		return () => window.removeEventListener('keydown', onKeyDown);
 	}, [dispatch, isOpen]);
 
+	const startResize = (event: ReactPointerEvent<HTMLButtonElement>) => {
+		event.preventDefault();
+		const panel = wrapperRef.current;
+		if (!panel) {
+			return;
+		}
+
+		const pointerId = event.pointerId;
+		const startY = event.clientY;
+		const startHeight = panel.getBoundingClientRect().height;
+		const maxHeight = Math.max(
+			MIN_PANEL_HEIGHT,
+			window.innerHeight - PANEL_MARGIN
+		);
+
+		const resize = (moveEvent: PointerEvent) => {
+			if (moveEvent.pointerId !== pointerId) {
+				return;
+			}
+			setPanelHeight(
+				Math.min(
+					maxHeight,
+					Math.max(
+						MIN_PANEL_HEIGHT,
+						startHeight + moveEvent.clientY - startY
+					)
+				)
+			);
+		};
+
+		const stopResize = (upEvent: PointerEvent) => {
+			if (upEvent.pointerId !== pointerId) {
+				return;
+			}
+			window.removeEventListener('pointermove', resize);
+			window.removeEventListener('pointerup', stopResize);
+			window.removeEventListener('pointercancel', stopResize);
+			fitTerminal();
+		};
+
+		window.addEventListener('pointermove', resize);
+		window.addEventListener('pointerup', stopResize);
+		window.addEventListener('pointercancel', stopResize);
+	};
+
 	if (!playground) {
 		return null;
 	}
 
 	return (
-		<div className={`${css.wrapper} ${isOpen ? css.open : ''}`}>
+		<div
+			aria-label="WP-CLI console"
+			className={`${css.wrapper} ${isOpen ? css.open : ''}`}
+			ref={wrapperRef}
+			role="region"
+			style={
+				{ '--wp-cli-panel-height': `${panelHeight}px` } as CSSProperties
+			}
+		>
+			<header className={css.header}>
+				<div>
+					<h2 className={css.title}>WP-CLI</h2>
+					<p className={css.description}>
+						Run commands against the active Playground site.
+					</p>
+					<p className={css.hint}>
+						Try `wp help`, `wp plugin list`, or `wp option get
+						home`.
+					</p>
+				</div>
+				<button
+					aria-label="Close WP-CLI console"
+					className={css.closeButton}
+					onClick={closeConsole}
+					type="button"
+				>
+					<Icon icon={close} size={18} />
+				</button>
+			</header>
 			{downloading && (
 				<progress
 					className={css.progress}
@@ -403,6 +498,12 @@ export function WpCliConsole() {
 				/>
 			)}
 			<div className={css.terminal} ref={terminalContainer} />
+			<button
+				aria-label="Resize WP-CLI console"
+				className={css.resizeHandle}
+				onPointerDown={startResize}
+				type="button"
+			/>
 		</div>
 	);
 }
