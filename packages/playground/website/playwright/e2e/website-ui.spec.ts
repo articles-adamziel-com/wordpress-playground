@@ -34,6 +34,58 @@ test('should correctly load /wp-admin without the trailing slash', async ({
 	);
 });
 
+test('should open, resize, and close the WP-CLI console', async ({
+	website,
+}) => {
+	await website.goto('./');
+	await website.ensureSiteManagerIsClosed();
+
+	await website.page.getByLabel('Open WP-CLI console').click();
+
+	const consolePanel = website.page.getByLabel('WP-CLI console', {
+		exact: true,
+	});
+	await expect(consolePanel).toBeVisible();
+	await expect(
+		consolePanel.getByRole('heading', { name: 'WP-CLI' })
+	).toBeVisible();
+	await expect(
+		consolePanel.getByText(
+			'Run commands against the active Playground site.'
+		)
+	).toBeVisible();
+	await expect(
+		consolePanel.getByText(
+			'Try `wp help`, `wp plugin list`, or `wp option get home`.'
+		)
+	).toBeVisible();
+
+	const initialBox = await consolePanel.boundingBox();
+	expect(initialBox).not.toBeNull();
+
+	const resizeHandle = consolePanel.getByLabel('Resize WP-CLI console');
+	const handleBox = await resizeHandle.boundingBox();
+	expect(handleBox).not.toBeNull();
+
+	await website.page.mouse.move(
+		handleBox!.x + handleBox!.width / 2,
+		handleBox!.y + handleBox!.height / 2
+	);
+	await website.page.mouse.down();
+	await website.page.mouse.move(
+		handleBox!.x + handleBox!.width / 2,
+		handleBox!.y + 120
+	);
+	await website.page.mouse.up();
+
+	const resizedBox = await consolePanel.boundingBox();
+	expect(resizedBox).not.toBeNull();
+	expect(resizedBox!.height).toBeGreaterThan(initialBox!.height + 80);
+
+	await consolePanel.getByLabel('Close WP-CLI console').click();
+	await expect(consolePanel).not.toBeVisible();
+});
+
 SupportedPHPVersions.forEach(async (version) => {
 	test(`should switch PHP version to ${version}`, async ({ website }) => {
 		await website.goto(`./`);
