@@ -1,11 +1,6 @@
 import type { MessageListener } from '@php-wasm/universal';
 import type { SyncProgressCallback } from '@php-wasm/web';
-import {
-	spawnPHPWorkerThread,
-	exposeAPI,
-	consumeAPI,
-	setupPostMessageRelay,
-} from '@php-wasm/web';
+import { spawnPHPWorkerThread, exposeAPI, consumeAPI } from '@php-wasm/web';
 
 import type {
 	PlaygroundWorkerEndpoint,
@@ -62,6 +57,12 @@ if (import.meta.hot) {
 }
 
 const query = new URL(document.location.href).searchParams;
+
+// Match the iframe canvas to WordPress while a new document is parsing.
+const WP_ADMIN_BACKGROUND_COLOR = '#f0f0f1';
+const DEFAULT_WORDPRESS_BACKGROUND_COLOR = '#fff';
+const documentsWithNavigationHandlers = new WeakSet<Document>();
+
 export async function bootPlaygroundRemote() {
 	assertNotInfiniteLoadingLoop();
 
@@ -129,7 +130,77 @@ export async function bootPlaygroundRemote() {
 		await spawnPHPWorkerThread(workerUrl)
 	);
 
-	const wpFrame = document.querySelector('#wp') as HTMLIFrameElement;
+	let wpFrame = document.querySelector('#wp') as HTMLIFrameElement;
+	let stagedNavigationFrame: HTMLIFrameElement | undefined;
+	let cancelStagedNavigation: (() => void) | undefined;
+	const navigationListeners = new Set<(url: string) => void>();
+
+	/**
+	 * Load the next WordPress document before replacing the visible iframe.
+	 * This keeps the current admin page visible until the new page is ready.
+	 */
+	const stageWordPressFrameNavigation = (url: string): Promise<void> => {
+		const currentFrame = wpFrame;
+		const nextFrame = createStagedWordPressFrame(currentFrame, url);
+
+		// A newer navigation supersedes any staged document still loading.
+		cancelStagedNavigation?.();
+		stagedNavigationFrame?.remove();
+		stagedNavigationFrame = nextFrame;
+		setWordPressFrameBackground(currentFrame, url);
+		const navigationComplete = new Promise<void>((resolve) => {
+			let resolved = false;
+			const resolveNavigation = () => {
+				if (resolved) {
+					return;
+				}
+				resolved = true;
+				if (cancelStagedNavigation === resolveNavigation) {
+					cancelStagedNavigation = undefined;
+				}
+				resolve();
+			};
+			cancelStagedNavigation = resolveNavigation;
+
+			void activateStagedWordPressFrame(nextFrame, () => {
+				if (stagedNavigationFrame !== nextFrame) {
+					nextFrame.remove();
+					resolveNavigation();
+					return;
+				}
+
+				stagedNavigationFrame = undefined;
+				currentFrame.removeAttribute('id');
+				nextFrame.id = 'wp';
+				nextFrame.classList.remove('is-staged');
+				currentFrame.remove();
+				wpFrame = nextFrame;
+				setupWordPressFrame(
+					wpFrame,
+					stageWordPressFrameNavigation,
+					navigationListeners,
+					(urlToConvert) => playground.internalUrlToPath(urlToConvert)
+				);
+				for (const listener of navigationListeners) {
+					void notifyWordPressFrameNavigation(
+						wpFrame,
+						listener,
+						(urlToConvert) =>
+							playground.internalUrlToPath(urlToConvert)
+					);
+				}
+				resolveNavigation();
+			});
+		});
+		currentFrame.after(nextFrame);
+		return navigationComplete;
+	};
+	setupWordPressFrame(
+		wpFrame,
+		stageWordPressFrameNavigation,
+		navigationListeners,
+		(urlToConvert) => playground.internalUrlToPath(urlToConvert)
+	);
 	const phpRemoteApi: PHPRemoteApi = {
 		async onDownloadProgress(fn) {
 			return phpWorkerApi.onDownloadProgress(fn);
@@ -182,8 +253,13 @@ export async function bootPlaygroundRemote() {
 			 * Even if we wanted to clean up these resources manually, it would have to be onbeforeunload.
 			 * We'll let the browser handle that.
 			 */
-
 			let lastPath: string | undefined;
+			const notifyPath = (path: string) => {
+				if (path !== lastPath) {
+					lastPath = path;
+					fn(path);
+				}
+			};
 
 			/**
 			 * Listen for URL change messages from the WordPress iframe.
@@ -207,60 +283,16 @@ export async function bootPlaygroundRemote() {
 						return;
 					}
 					const path = await playground.internalUrlToPath(data.url);
-					if (path !== lastPath) {
-						lastPath = path;
-						fn(path);
-					}
+					notifyPath(path);
 				} catch {
 					// Ignore JSON parse errors
 				}
 			});
 
-			// Listen for iframe load events (for navigation)
-			wpFrame.addEventListener('load', async (e: any) => {
-				try {
-					/**
-					 * When navigating to a page with %0A sequences (encoded newlines)
-					 * in the query string, the `location.href` property of the
-					 * iframe's content window doesn't seem to reflect them. Everything
-					 * else is in place, but not the %0A sequences.
-					 *
-					 * Weirdly, these sequences are available after the next event
-					 * loop tick – hence the `setTimeout(0)`.
-					 *
-					 * The exact cause is unclear at the moment of writing of this
-					 * comment. The WHATWG HTML Standard [1] has a few hints:
-					 *
-					 * * Current and active session history entries may get out of
-					 *   sync for iframes.
-					 * * Documents inside iframes have "is delaying load events" set
-					 *   to true.
-					 *
-					 * But there doesn't seem to be any concrete explanation and no
-					 * recommended remediation. If anyone has a clue, please share it
-					 * in a GitHub issue or start a new PR.
-					 *
-					 * [1] https://html.spec.whatwg.org/multipage/document-sequences.html#nav-active-history-entry
-					 */
-					// Get the content window while e.currentTarget is available.
-					// It will be undefined on the next event loop tick.
-					const contentWindow = e.currentTarget!.contentWindow;
-					await new Promise((resolve) => setTimeout(resolve, 0));
-					const path = await playground.internalUrlToPath(
-						contentWindow.location.href
-					);
-					if (path !== lastPath) {
-						lastPath = path;
-						fn(path);
-					}
-				} catch {
-					// @TODO: The above call can fail if the remote iframe
-					// is embedded in StackBlitz, or presumably, any other
-					// environment with restrictive CSP. Any error thrown
-					// due to CORS-related stuff crashes the entire remote
-					// so let's ignore it for now and find a correct fix in time.
-				}
-			});
+			navigationListeners.add(notifyPath);
+			addWordPressFrameNavigationListener(wpFrame, notifyPath, (url) =>
+				playground.internalUrlToPath(url)
+			);
 
 			// Also propagate navigation changes twice a second for any
 			// updates we don't receive via the iframe load event.
@@ -311,37 +343,7 @@ export async function bootPlaygroundRemote() {
 				requestedPath = '/wp-admin/';
 			}
 			const newUrl = await playground.pathToInternalUrl(requestedPath);
-			const oldUrl = wpFrame.src;
-
-			/**
-			 * Wait until the iframe loads. This prevents cancelled requests when multiple
-			 * `goTo()` calls happen one after another which, in turn, prevents cookies
-			 * generated by those cancelled requests from overriding cookies generated by
-			 * the subsequent request.
-			 *
-			 * @see https://github.com/WordPress/wordpress-playground/issues/3061 for
-			 *      the detailed context.
-			 */
-			const navigationComplete = new Promise<void>((resolve) => {
-				wpFrame.addEventListener('load', () => resolve(), {
-					once: true,
-				});
-			});
-
-			// If the URL is the same, we need to force a reload
-			// because otherwise the iframe will not reload the page.
-			if (newUrl === oldUrl && wpFrame.contentWindow) {
-				try {
-					wpFrame.contentWindow.location.href = newUrl;
-					await navigationComplete;
-					return;
-				} catch {
-					// The above call can fail if we're embedded in an
-					// environment with a restrictive CSP policy.
-				}
-			}
-			wpFrame.src = newUrl;
-			await navigationComplete;
+			await stageWordPressFrameNavigation(newUrl);
 		},
 		async getCurrentURL() {
 			let url = '';
@@ -444,7 +446,6 @@ export async function bootPlaygroundRemote() {
 					const args = event.data.args || [];
 					const method = event.data
 						.method as keyof PlaygroundWorkerEndpoint;
-
 					if (method === 'request') {
 						const streamedResponse = await (
 							phpWorkerApi.requestStreamed as any
@@ -494,8 +495,8 @@ export async function bootPlaygroundRemote() {
 			try {
 				await phpWorkerApi.isReady();
 
-				setupPostMessageRelay(
-					wpFrame,
+				setupDynamicPostMessageRelay(
+					() => wpFrame,
 					getOrigin((await playground.absoluteUrl)!)
 				);
 
@@ -622,6 +623,286 @@ function detectDocumentIsolationPolicySuport(): Promise<boolean> {
 
 function getOrigin(url: string) {
 	return new URL(url, 'https://example.com').origin;
+}
+
+function setupWordPressFrame(
+	wpFrame: HTMLIFrameElement,
+	navigate: (url: string) => void | Promise<void>,
+	navigationListeners: Set<(url: string) => void>,
+	internalUrlToPath: (url: string) => Promise<string>
+) {
+	wpFrame.classList.add('wp-frame');
+	setupWordPressFrameBackgroundSync(wpFrame, navigate);
+	for (const listener of navigationListeners) {
+		addWordPressFrameNavigationListener(
+			wpFrame,
+			listener,
+			internalUrlToPath
+		);
+	}
+}
+
+function createStagedWordPressFrame(
+	currentFrame: HTMLIFrameElement,
+	url: string
+) {
+	const nextFrame = document.createElement('iframe');
+	nextFrame.title = currentFrame.title;
+	nextFrame.className = currentFrame.className;
+	nextFrame.classList.add('wp-frame', 'is-staged');
+
+	const sandbox = currentFrame.getAttribute('sandbox');
+	if (sandbox !== null) {
+		nextFrame.setAttribute('sandbox', sandbox);
+	}
+
+	setWordPressFrameBackground(nextFrame, url);
+	nextFrame.src = url;
+	return nextFrame;
+}
+
+async function activateStagedWordPressFrame(
+	wpFrame: HTMLIFrameElement,
+	activate: () => void
+) {
+	await waitForWordPressFrameLoad(wpFrame);
+	await new Promise((resolve) => requestAnimationFrame(resolve));
+	activate();
+}
+
+function waitForWordPressFrameLoad(wpFrame: HTMLIFrameElement) {
+	return new Promise<void>((resolve) => {
+		const onLoad = () => {
+			if (getWordPressFrameUrl(wpFrame) === 'about:blank') {
+				return;
+			}
+			wpFrame.removeEventListener('load', onLoad);
+			resolve();
+		};
+		wpFrame.addEventListener('load', onLoad);
+	});
+}
+
+function setupWordPressFrameBackgroundSync(
+	wpFrame: HTMLIFrameElement,
+	navigate: (url: string) => void | Promise<void>
+) {
+	const syncFromCurrentDocument = () => {
+		const currentUrl = getWordPressFrameUrl(wpFrame);
+		setWordPressFrameBackground(wpFrame, currentUrl);
+		installNavigationHandlers(wpFrame, navigate);
+	};
+
+	wpFrame.addEventListener('load', syncFromCurrentDocument);
+	syncFromCurrentDocument();
+}
+
+function addWordPressFrameNavigationListener(
+	wpFrame: HTMLIFrameElement,
+	listener: (url: string) => void,
+	internalUrlToPath: (url: string) => Promise<string>
+) {
+	wpFrame.addEventListener('load', async (e: Event) => {
+		await notifyWordPressFrameNavigation(
+			e.currentTarget as HTMLIFrameElement,
+			listener,
+			internalUrlToPath
+		);
+	});
+}
+
+async function notifyWordPressFrameNavigation(
+	wpFrame: HTMLIFrameElement,
+	listener: (url: string) => void,
+	internalUrlToPath: (url: string) => Promise<string>
+) {
+	try {
+		/**
+		 * When navigating to a page with %0A sequences (encoded newlines)
+		 * in the query string, the `location.href` property of the
+		 * iframe's content window doesn't seem to reflect them. Everything
+		 * else is in place, but not the %0A sequences.
+		 *
+		 * Weirdly, these sequences are available after the next event
+		 * loop tick – hence the `setTimeout(0)`.
+		 *
+		 * The exact cause is unclear at the moment of writing of this
+		 * comment. The WHATWG HTML Standard [1] has a few hints:
+		 *
+		 * * Current and active session history entries may get out of
+		 *   sync for iframes.
+		 * * Documents inside iframes have "is delaying load events" set
+		 *   to true.
+		 *
+		 * But there doesn't seem to be any concrete explanation and no
+		 * recommended remediation. If anyone has a clue, please share it
+		 * in a GitHub issue or start a new PR.
+		 *
+		 * [1] https://html.spec.whatwg.org/multipage/document-sequences.html#nav-active-history-entry
+		 */
+		await new Promise((resolve) => setTimeout(resolve, 0));
+		const path = await internalUrlToPath(
+			wpFrame.contentWindow!.location.href
+		);
+		listener(path);
+	} catch {
+		// Ignore errors due to CORS or CSP restrictions.
+	}
+}
+
+function installNavigationHandlers(
+	wpFrame: HTMLIFrameElement,
+	navigate: (url: string) => void | Promise<void>
+) {
+	try {
+		const doc = wpFrame.contentDocument;
+		if (!doc || documentsWithNavigationHandlers.has(doc)) {
+			return;
+		}
+
+		doc.addEventListener(
+			'click',
+			(event) => {
+				const mouseEvent = event as MouseEvent;
+				const element = event.target as Element | null;
+				const link = element?.closest(
+					'a[href]'
+				) as HTMLAnchorElement | null;
+				if (!link) {
+					return;
+				}
+
+				if (shouldStageLinkNavigation(mouseEvent, link, wpFrame)) {
+					event.preventDefault();
+					void navigate(link.href);
+				} else {
+					setWordPressFrameBackground(wpFrame, link.href);
+				}
+			},
+			false
+		);
+
+		doc.addEventListener(
+			'submit',
+			(event) => {
+				const form = event.target as HTMLFormElement | null;
+				if (form?.action) {
+					setWordPressFrameBackground(wpFrame, form.action);
+				}
+			},
+			{ capture: true }
+		);
+
+		documentsWithNavigationHandlers.add(doc);
+	} catch {
+		// Ignore errors due to CORS or CSP restrictions.
+	}
+}
+
+function shouldStageLinkNavigation(
+	event: MouseEvent,
+	link: HTMLAnchorElement,
+	wpFrame: HTMLIFrameElement
+) {
+	if (
+		event.defaultPrevented ||
+		event.metaKey ||
+		event.ctrlKey ||
+		event.shiftKey ||
+		event.altKey ||
+		event.button !== 0 ||
+		link.hasAttribute('download')
+	) {
+		return false;
+	}
+
+	const target = link.getAttribute('target');
+	if (target && target.toLowerCase() !== '_self') {
+		return false;
+	}
+
+	const currentUrl = new URL(getWordPressFrameUrl(wpFrame));
+	const nextUrl = new URL(link.href, currentUrl);
+	if (nextUrl.origin !== currentUrl.origin) {
+		return false;
+	}
+
+	if (nextUrl.protocol !== 'http:' && nextUrl.protocol !== 'https:') {
+		return false;
+	}
+
+	const currentUrlWithoutHash = new URL(currentUrl);
+	currentUrlWithoutHash.hash = '';
+	const nextUrlWithoutHash = new URL(nextUrl);
+	nextUrlWithoutHash.hash = '';
+	if (
+		nextUrl.hash &&
+		nextUrlWithoutHash.href === currentUrlWithoutHash.href
+	) {
+		return false;
+	}
+
+	return true;
+}
+
+function setupDynamicPostMessageRelay(
+	getNestedFrame: () => HTMLIFrameElement,
+	expectedOrigin?: string
+) {
+	window.addEventListener('message', (event) => {
+		const nestedFrame = getNestedFrame();
+		if (event.source !== nestedFrame.contentWindow) {
+			return;
+		}
+
+		if (expectedOrigin && event.origin !== expectedOrigin) {
+			return;
+		}
+
+		if (typeof event.data !== 'object' || event.data.type !== 'relay') {
+			return;
+		}
+
+		window.parent.postMessage(event.data, '*');
+	});
+
+	window.addEventListener('message', (event) => {
+		if (event.source !== window.parent) {
+			return;
+		}
+
+		if (typeof event.data !== 'object' || event.data.type !== 'relay') {
+			return;
+		}
+
+		getNestedFrame().contentWindow?.postMessage(event.data);
+	});
+}
+
+function setWordPressFrameBackground(wpFrame: HTMLIFrameElement, url: string) {
+	const color = isWpAdminUrl(url)
+		? WP_ADMIN_BACKGROUND_COLOR
+		: DEFAULT_WORDPRESS_BACKGROUND_COLOR;
+	wpFrame.style.backgroundColor = color;
+	document.documentElement.style.backgroundColor = color;
+	document.body.style.backgroundColor = color;
+}
+
+function getWordPressFrameUrl(wpFrame: HTMLIFrameElement) {
+	try {
+		return wpFrame.contentWindow?.location.href || wpFrame.src;
+	} catch {
+		return wpFrame.src;
+	}
+}
+
+function isWpAdminUrl(url: string) {
+	try {
+		const { pathname } = new URL(url, document.location.href);
+		return /\/wp-admin(?:\/|$)/.test(pathname);
+	} catch {
+		return false;
+	}
 }
 
 /**

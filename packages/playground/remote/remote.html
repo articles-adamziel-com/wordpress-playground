@@ -9,7 +9,7 @@
 
 			html,
 			body,
-			#wp {
+			.wp-frame {
 				height: 100%;
 				width: 100%;
 				margin: 0;
@@ -20,6 +20,21 @@
 			html,
 			body {
 				overflow: hidden;
+			}
+
+			body {
+				position: relative;
+			}
+
+			.wp-frame {
+				display: block;
+				position: absolute;
+				inset: 0;
+			}
+
+			.wp-frame.is-staged {
+				pointer-events: none;
+				transform: translateX(-100vw);
 			}
 
 			body.has-error {
@@ -78,6 +93,7 @@
 	<body class="is-loading">
 		<iframe
 			id="wp"
+			class="wp-frame"
 			title="The WordPress site"
 			sandbox="allow-same-origin allow-scripts allow-popups allow-forms allow-downloads allow-modals"
 		></iframe>
