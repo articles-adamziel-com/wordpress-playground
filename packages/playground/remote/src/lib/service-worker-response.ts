@@ -14,6 +14,14 @@ export type SerializedServiceWorkerPHPResponse = {
 	transfer: Transferable[];
 };
 
+/**
+ * Serializes a streamed PHP response for transfer to the service worker.
+ *
+ * The remote iframe cannot transfer a ReadableStream directly, so most
+ * responses are bridged through a MessagePort. HTML navigations are buffered
+ * instead because browsers expect the navigation document body to be complete
+ * when the service worker resolves the fetch response.
+ */
 export async function serializeStreamedResponseForServiceWorker(
 	streamedResponse: StreamedPHPResponse
 ): Promise<SerializedServiceWorkerPHPResponse> {
@@ -21,6 +29,8 @@ export async function serializeStreamedResponseForServiceWorker(
 	const headers = await streamedResponse.headers;
 
 	if (isHtmlContentType(headers['content-type'])) {
+		// Buffer HTML documents so navigation requests receive a complete body
+		// instead of a MessagePort-backed stream.
 		const bytes = await streamedResponse.stdoutBytes;
 		const transfer =
 			bytes.byteLength > 0 && bytes.buffer instanceof ArrayBuffer
@@ -36,6 +46,8 @@ export async function serializeStreamedResponseForServiceWorker(
 		};
 	}
 
+	// Keep non-HTML responses streamed to avoid buffering large assets or
+	// binary downloads in memory before the service worker can respond.
 	const bodyPort = streamToPort(streamedResponse.stdout);
 	return {
 		response: {
