@@ -7,10 +7,10 @@ const baseURL =
 
 export const playwrightConfig: PlaywrightTestConfig = {
 	testDir: './e2e',
-	fullyParallel: true,
+	fullyParallel: !process.env.CI,
 	forbidOnly: !!process.env.CI,
 	retries: 3,
-	workers: 3,
+	workers: process.env.CI ? 1 : 3,
 	reporter: [['html'], ['list', { printSteps: true }]],
 	use: {
 		baseURL,
