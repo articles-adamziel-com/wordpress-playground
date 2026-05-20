@@ -5,6 +5,15 @@
  * and tracks which frames have playground instances.
  */
 
+import {
+	getHostname,
+	getOrigin,
+	getOriginPattern,
+	hasPermissionForUrl,
+	isAllowlistedUrl,
+	isSupportedUrl,
+} from './permissions';
+
 interface PlaygroundFrame {
 	frameId: number;
 	tabId: number;
@@ -13,11 +22,278 @@ interface PlaygroundFrame {
 	documentRoot?: string;
 }
 
+interface FrameAccess {
+	frameId: number;
+	parentFrameId: number;
+	url: string;
+	origin: string;
+	originPattern: string | null;
+	hostname: string;
+	isSupported: boolean;
+	isAllowlisted: boolean;
+	hasPermission: boolean;
+	canRequestPermission: boolean;
+}
+
+interface InjectionResult {
+	frameId: number;
+	url: string;
+	injected: boolean;
+	error?: string;
+}
+
 // Store playground frames per tab
 const playgroundFrames = new Map<number, Map<number, PlaygroundFrame>>();
 
 // Store connections to DevTools panels
 const devToolsConnections = new Map<number, chrome.runtime.Port>();
+
+function getErrorMessage(error: unknown): string {
+	return error instanceof Error ? error.message : String(error);
+}
+
+function getDetectedPlaygroundFrames(tabId: number): PlaygroundFrame[] {
+	return Array.from(playgroundFrames.get(tabId)?.values() ?? []).filter(
+		(frame) => frame.hasPlayground
+	);
+}
+
+function getDynamicContentScriptId(originPattern: string): string {
+	return `wp-playground-devtools-${originPattern
+		.replace(/[^a-zA-Z0-9_]/g, '_')
+		.slice(0, 80)}`;
+}
+
+function canRegisterDynamicContentScript(originPattern: string): boolean {
+	return (
+		originPattern === '<all_urls>' ||
+		originPattern.startsWith('http://') ||
+		originPattern.startsWith('https://')
+	);
+}
+
+async function registerDynamicContentScript(originPattern: string) {
+	if (!canRegisterDynamicContentScript(originPattern)) {
+		return;
+	}
+
+	const id = getDynamicContentScriptId(originPattern);
+	const existing = await chrome.scripting.getRegisteredContentScripts({
+		ids: [id],
+	});
+
+	if (existing.length > 0) {
+		return;
+	}
+
+	try {
+		await chrome.scripting.registerContentScripts([
+			{
+				id,
+				matches: [originPattern],
+				js: ['content-script.js'],
+				runAt: 'document_idle',
+				allFrames: true,
+				matchOriginAsFallback: true,
+				persistAcrossSessions: true,
+			},
+		]);
+	} catch (error) {
+		const existingAfterError =
+			await chrome.scripting.getRegisteredContentScripts({
+				ids: [id],
+			});
+		if (existingAfterError.length === 0) {
+			throw error;
+		}
+	}
+}
+
+async function unregisterDynamicContentScripts(originPatterns: string[]) {
+	const ids = originPatterns
+		.filter(canRegisterDynamicContentScript)
+		.map(getDynamicContentScriptId);
+
+	if (ids.length === 0) {
+		return;
+	}
+
+	await chrome.scripting.unregisterContentScripts({ ids });
+}
+
+async function syncDynamicContentScripts() {
+	try {
+		const permissions = await chrome.permissions.getAll();
+		await Promise.all(
+			(permissions.origins ?? []).map(registerDynamicContentScript)
+		);
+	} catch (error) {
+		// eslint-disable-next-line no-console
+		console.debug('Failed to sync dynamic content scripts:', error);
+	}
+}
+
+async function getFrameAccess(tabId: number): Promise<FrameAccess[]> {
+	const frames = await chrome.webNavigation.getAllFrames({ tabId });
+	if (!frames) {
+		return [];
+	}
+
+	return Promise.all(
+		frames.map(async (frame) => {
+			const originPattern = getOriginPattern(frame.url);
+			const isSupported = isSupportedUrl(frame.url);
+			const isAllowlisted = isAllowlistedUrl(frame.url);
+			const hasPermission =
+				isSupported &&
+				(isAllowlisted || (await hasPermissionForUrl(frame.url)));
+
+			return {
+				frameId: frame.frameId,
+				parentFrameId: frame.parentFrameId,
+				url: frame.url,
+				origin: getOrigin(frame.url),
+				originPattern,
+				hostname: getHostname(frame.url),
+				isSupported,
+				isAllowlisted,
+				hasPermission,
+				canRequestPermission: isSupported && !isAllowlisted,
+			};
+		})
+	);
+}
+
+async function postFrameState(
+	tabId: number,
+	injectionResults?: InjectionResult[]
+) {
+	const port = devToolsConnections.get(tabId);
+	if (!port) {
+		return;
+	}
+
+	port.postMessage({
+		type: 'FRAMES_UPDATED',
+		frames: getDetectedPlaygroundFrames(tabId),
+		frameAccess: await getFrameAccess(tabId),
+		injectionResults,
+	});
+}
+
+function recordPlaygroundFrame(
+	tabId: number,
+	frameId: number,
+	response: {
+		url: string;
+		hasPlayground: boolean;
+		documentRoot?: string;
+	}
+) {
+	const frames = playgroundFrames.get(tabId) ?? new Map();
+	frames.set(frameId, {
+		frameId,
+		tabId,
+		url: response.url,
+		hasPlayground: response.hasPlayground,
+		documentRoot: response.documentRoot,
+	});
+	playgroundFrames.set(tabId, frames);
+}
+
+async function refreshFrame(tabId: number, frameId: number) {
+	try {
+		const response = await chrome.tabs.sendMessage(
+			tabId,
+			{ type: 'CHECK_PLAYGROUND' },
+			{ frameId }
+		);
+
+		if (response) {
+			recordPlaygroundFrame(tabId, frameId, response);
+		}
+	} catch {
+		// No content script is available in this frame.
+	}
+}
+
+async function refreshTabFrames(tabId: number) {
+	const frameAccess = await getFrameAccess(tabId);
+	const activeFrameIds = new Set(frameAccess.map((frame) => frame.frameId));
+	const tabFrames = playgroundFrames.get(tabId);
+
+	if (tabFrames) {
+		for (const frameId of tabFrames.keys()) {
+			if (!activeFrameIds.has(frameId)) {
+				tabFrames.delete(frameId);
+			}
+		}
+	}
+
+	await Promise.all(
+		frameAccess
+			.filter((frame) => frame.hasPermission)
+			.map((frame) => refreshFrame(tabId, frame.frameId))
+	);
+
+	await postFrameState(tabId);
+}
+
+async function injectContentScript(
+	tabId: number,
+	originPattern?: string
+): Promise<InjectionResult[]> {
+	const frameAccess = await getFrameAccess(tabId);
+	const framesToInject = frameAccess.filter(
+		(frame) =>
+			frame.hasPermission &&
+			(!originPattern ||
+				originPattern === '<all_urls>' ||
+				frame.originPattern === originPattern)
+	);
+
+	const results = await Promise.all(
+		framesToInject.map(async (frame): Promise<InjectionResult> => {
+			try {
+				await chrome.scripting.executeScript({
+					target: { tabId, frameIds: [frame.frameId] },
+					files: ['content-script.js'],
+				});
+				return {
+					frameId: frame.frameId,
+					url: frame.url,
+					injected: true,
+				};
+			} catch (error) {
+				return {
+					frameId: frame.frameId,
+					url: frame.url,
+					injected: false,
+					error: getErrorMessage(error),
+				};
+			}
+		})
+	);
+
+	await Promise.all(
+		results
+			.filter((result) => result.injected)
+			.map((result) => refreshFrame(tabId, result.frameId))
+	);
+	await postFrameState(tabId, results);
+
+	return results;
+}
+
+async function registerAndInjectHostPermission(tabId: number, url: string) {
+	const originPattern = getOriginPattern(url);
+	if (originPattern) {
+		await registerDynamicContentScript(originPattern);
+	}
+
+	await injectContentScript(tabId, originPattern ?? undefined);
+	await refreshTabFrames(tabId);
+}
 
 /**
  * Handle messages from content scripts.
@@ -27,29 +303,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 		const tabId = sender.tab.id;
 		const frameId = sender.frameId ?? 0;
 
-		if (!playgroundFrames.has(tabId)) {
-			playgroundFrames.set(tabId, new Map());
-		}
-
-		const frames = playgroundFrames.get(tabId)!;
-		frames.set(frameId, {
-			frameId,
-			tabId,
+		recordPlaygroundFrame(tabId, frameId, {
 			url: message.url,
 			hasPlayground: message.hasPlayground,
 			documentRoot: message.documentRoot,
 		});
 
-		// Notify the DevTools panel for this tab if connected
-		const port = devToolsConnections.get(tabId);
-		if (port) {
-			port.postMessage({
-				type: 'FRAMES_UPDATED',
-				frames: Array.from(frames.values()).filter(
-					(f) => f.hasPlayground
-				),
-			});
-		}
+		void postFrameState(tabId);
 		return false;
 	}
 
@@ -171,66 +431,23 @@ chrome.runtime.onConnect.addListener((port) => {
 			}
 			devToolsConnections.set(tabId, port);
 
-			// Send current frames to the newly connected panel
-			const frames = playgroundFrames.get(tabId);
-			if (frames) {
-				port.postMessage({
-					type: 'FRAMES_UPDATED',
-					frames: Array.from(frames.values()).filter(
-						(f) => f.hasPlayground
-					),
-				});
-			}
+			void (async () => {
+				await syncDynamicContentScripts();
+				await injectContentScript(tabId!);
+				await refreshTabFrames(tabId!);
+			})();
 		}
 
 		if (message.type === 'REFRESH_FRAMES' && tabId !== null) {
-			// Request all frames in the tab to re-check for playground
-			chrome.tabs
-				.sendMessage(
-					tabId,
-					{ type: 'CHECK_PLAYGROUND' },
-					{ frameId: 0 }
-				)
-				.catch(() => {});
+			void refreshTabFrames(tabId);
+		}
 
-			// Also query all frames
-			chrome.webNavigation.getAllFrames({ tabId }).then((frames) => {
-				if (!frames) return;
-
-				frames.forEach((frame) => {
-					chrome.tabs
-						.sendMessage(
-							tabId!,
-							{ type: 'CHECK_PLAYGROUND' },
-							{ frameId: frame.frameId }
-						)
-						.then((response) => {
-							if (response) {
-								const tabFrames =
-									playgroundFrames.get(tabId!) ?? new Map();
-								tabFrames.set(frame.frameId, {
-									frameId: frame.frameId,
-									tabId: tabId!,
-									url: response.url,
-									hasPlayground: response.hasPlayground,
-									documentRoot: response.documentRoot,
-								});
-								playgroundFrames.set(tabId!, tabFrames);
-
-								const port = devToolsConnections.get(tabId!);
-								if (port) {
-									port.postMessage({
-										type: 'FRAMES_UPDATED',
-										frames: Array.from(
-											tabFrames.values()
-										).filter((f) => f.hasPlayground),
-									});
-								}
-							}
-						})
-						.catch(() => {});
-				});
-			});
+		if (
+			(message.type === 'HOST_PERMISSION_GRANTED' ||
+				message.type === 'INJECT_CONTENT_SCRIPT') &&
+			tabId !== null
+		) {
+			void registerAndInjectHostPermission(tabId, message.url);
 		}
 
 		if (message.type === 'EXECUTE_METHOD' && tabId !== null) {
@@ -269,6 +486,31 @@ chrome.runtime.onConnect.addListener((port) => {
 	});
 });
 
+chrome.permissions.onAdded.addListener((permissions) => {
+	void Promise.all(
+		(permissions.origins ?? []).map(registerDynamicContentScript)
+	);
+});
+
+chrome.permissions.onRemoved.addListener((permissions) => {
+	void (async () => {
+		await unregisterDynamicContentScripts(permissions.origins ?? []);
+		for (const tabId of devToolsConnections.keys()) {
+			await refreshTabFrames(tabId);
+		}
+	})();
+});
+
+chrome.runtime.onInstalled.addListener(() => {
+	void syncDynamicContentScripts();
+});
+
+chrome.runtime.onStartup.addListener(() => {
+	void syncDynamicContentScripts();
+});
+
+void syncDynamicContentScripts();
+
 // Clean up when tabs are closed
 chrome.tabs.onRemoved.addListener((tabId) => {
 	playgroundFrames.delete(tabId);
@@ -287,4 +529,17 @@ chrome.webNavigation.onBeforeNavigate.addListener((details) => {
 			frames.delete(details.frameId);
 		}
 	}
+
+	void postFrameState(details.tabId);
+});
+
+chrome.webNavigation.onCompleted.addListener((details) => {
+	if (!devToolsConnections.has(details.tabId)) {
+		return;
+	}
+
+	void (async () => {
+		await injectContentScript(details.tabId);
+		await refreshTabFrames(details.tabId);
+	})();
 });
