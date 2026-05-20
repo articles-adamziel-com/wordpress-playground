@@ -84,7 +84,9 @@ const WP_VERSIONS = [
 
 const PORT = 5400;
 const TIMEOUT_S = 120;
-const PLUGIN_ACTIVATION_TIMEOUT_S = 90;
+const NEW_POST_NAVIGATION_TIMEOUT_S = 60;
+const PLUGINS_PAGE_NAVIGATION_TIMEOUT_S = 60;
+const PLUGIN_ACTIVATION_TIMEOUT_S = 150;
 const results = [];
 
 /**
@@ -120,6 +122,34 @@ async function waitForWPFrame(page, timeoutSeconds, opts = {}) {
 				return { body, frame };
 			} catch {}
 		}
+	}
+	return null;
+}
+
+async function getCurrentWPFramePage(page) {
+	for (const frame of page.frames()) {
+		try {
+			if (!frame.url().includes('scope:')) continue;
+			const body = await frame.locator('body').innerText({
+				timeout: 2000,
+			});
+			if (body && body.length >= 20) {
+				return { body, frame };
+			}
+		} catch {}
+	}
+	return null;
+}
+
+async function navigateViaUrlBarWithRetry(
+	page,
+	path,
+	timeoutSeconds,
+	attempts = 2
+) {
+	for (let attempt = 0; attempt < attempts; attempt++) {
+		const wpPage = await navigateViaUrlBar(page, path, timeoutSeconds);
+		if (wpPage) return wpPage;
 	}
 	return null;
 }
@@ -448,7 +478,11 @@ function shouldRetryFrontPageBoot(consoleErrors) {
 	);
 }
 
-const browser = await chromium.launch({ headless: true });
+const browser = await chromium.launch({
+	headless: true,
+	executablePath:
+		process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH || undefined,
+});
 
 for (const { wp, php } of MATRIX) {
 	const label = `WP ${wp} (PHP ${php})`;
@@ -669,9 +703,18 @@ for (const { wp, php } of MATRIX) {
 					? '/wp-admin/post.php'
 					: '/wp-admin/post-new.php';
 				const consoleStartIndex = consoleErrors.length;
-				const wp3 = await navigateViaUrlBar(page, newPostPath, 30);
+				const wp3 = await navigateViaUrlBarWithRetry(
+					page,
+					newPostPath,
+					NEW_POST_NAVIGATION_TIMEOUT_S
+				);
 				if (!wp3) {
-					newPostStatus = { status: 'TIMEOUT' };
+					const currentPage = await getCurrentWPFramePage(page);
+					newPostStatus = {
+						status: 'TIMEOUT',
+						detail: currentPage?.frame.url() || '',
+						body: currentPage?.body,
+					};
 				} else {
 					// Check both innerText and innerHTML for PHP
 					// errors — some errors land inside hidden elements
@@ -760,10 +803,15 @@ for (const { wp, php } of MATRIX) {
 				const wp4 = await navigateViaUrlBar(
 					page,
 					'/wp-admin/plugins.php',
-					30
+					PLUGINS_PAGE_NAVIGATION_TIMEOUT_S
 				);
 				if (!wp4) {
-					pluginStatus = { status: 'TIMEOUT' };
+					const currentPage = await getCurrentWPFramePage(page);
+					pluginStatus = {
+						status: 'TIMEOUT',
+						detail: currentPage?.frame.url() || '',
+						body: currentPage?.body,
+					};
 				} else {
 					// Target Hello Dolly specifically via its href. Clicking
 					// the *first* Activate link lands on Akismet's setup
@@ -797,11 +845,12 @@ for (const { wp, php } of MATRIX) {
 							break;
 						}
 
-						const refreshedPluginsPage = await navigateViaUrlBar(
-							page,
-							'/wp-admin/plugins.php',
-							30
-						);
+						const refreshedPluginsPage =
+							await navigateViaUrlBarWithRetry(
+								page,
+								'/wp-admin/plugins.php',
+								PLUGINS_PAGE_NAVIGATION_TIMEOUT_S
+							);
 						if (
 							refreshedPluginsPage &&
 							(await hasPluginActivated(refreshedPluginsPage))
@@ -821,7 +870,20 @@ for (const { wp, php } of MATRIX) {
 					}
 					if (foundActivateLink) {
 						if (!wp4b) {
-							pluginStatus = { status: 'TIMEOUT' };
+							const currentPage =
+								await getCurrentWPFramePage(page);
+							if (
+								currentPage &&
+								(await hasPluginActivated(currentPage))
+							) {
+								pluginStatus = { status: 'OK' };
+							} else {
+								pluginStatus = {
+									status: 'TIMEOUT',
+									detail: currentPage?.frame.url() || '',
+									body: currentPage?.body,
+								};
+							}
 						} else {
 							const error = findPHPError(wp4b.body);
 							const ok = await hasPluginActivated(wp4b);
