@@ -12,10 +12,13 @@ import {
 import { SyncLocalFilesButton } from '../sync-local-files-button';
 import { Dropdown, Icon } from '@wordpress/components';
 import { Modal } from '../../components/modal';
-import { cog, category } from '@wordpress/icons';
+import { cog, category, code } from '@wordpress/icons';
 import Button from '../button';
 import { ActiveSiteSettingsForm } from '../site-manager/site-settings-form';
-import { setSiteManagerOpen } from '../../lib/state/redux/slice-ui';
+import {
+	setSiteManagerOpen,
+	setWpCliConsoleOpen,
+} from '../../lib/state/redux/slice-ui';
 import { SiteManagerIcon } from '@wp-playground/components';
 import {
 	SavedPlaygroundsOverlay,
@@ -44,6 +47,9 @@ export default function BrowserChrome({
 	const dispatch = useAppDispatch();
 	const siteManagerIsOpen = useAppSelector(
 		(state) => state.ui.siteManagerIsOpen
+	);
+	const wpCliConsoleIsOpen = useAppSelector(
+		(state) => state.ui.wpCliConsoleIsOpen
 	);
 	const addressBarClass = classNames(css.addressBarSlot, {
 		[css.isHidden]: !showAddressBar,
@@ -105,6 +111,30 @@ export default function BrowserChrome({
 						>
 							<Icon icon={category} size={20} />
 						</Button>
+
+						{clientInfo && (
+							<Button
+								variant="browser-chrome"
+								aria-label={
+									wpCliConsoleIsOpen
+										? 'Close WP-CLI console'
+										: 'Open WP-CLI console'
+								}
+								aria-pressed={wpCliConsoleIsOpen}
+								onClick={() => {
+									dispatch(
+										setWpCliConsoleOpen(!wpCliConsoleIsOpen)
+									);
+								}}
+								style={{
+									fill: '#FFF',
+									alignItems: 'center',
+									display: 'flex',
+								}}
+							>
+								<Icon icon={code} size={28} />
+							</Button>
+						)}
 
 						<Button
 							variant="browser-chrome"
