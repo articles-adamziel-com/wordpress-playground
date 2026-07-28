@@ -51,6 +51,12 @@ const PreviewPRModal = lazy(() =>
 	}))
 );
 
+const GitRepoImportModal = lazy(() =>
+	import('../git-repo-import-modal').then((m) => ({
+		default: m.GitRepoImportModal,
+	}))
+);
+
 const displayMode = getDisplayModeFromQuery();
 function getDisplayModeFromQuery(): DisplayMode {
 	const query = new URLSearchParams(document.location.search);
@@ -174,6 +180,12 @@ function Modals() {
 		return <GitHubPrivateRepoAuthModal />;
 	} else if (currentModal === modalSlugs.BLUEPRINT_URL) {
 		return <BlueprintUrlModal />;
+	} else if (currentModal === modalSlugs.GIT_REPO_IMPORT) {
+		return (
+			<LazyModal>
+				<GitRepoImportModal />
+			</LazyModal>
+		);
 	}
 
 	if (currentModal === modalSlugs.PREVIEW_PR_WP) {
