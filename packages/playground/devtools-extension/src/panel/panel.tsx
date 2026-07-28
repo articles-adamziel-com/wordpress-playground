@@ -1,7 +1,8 @@
-import { useEffect, useState, useRef } from 'react';
+import { useCallback, useEffect, useState, useRef } from 'react';
 import { createRoot } from 'react-dom/client';
 import { PlaygroundFileEditor } from '@wp-playground/components';
 import type { AsyncWritableFilesystem } from '@wp-playground/storage';
+import { getOriginPattern, requestPermissionForUrl } from '../permissions';
 import styles from './panel.module.css';
 
 interface PlaygroundFrame {
@@ -10,6 +11,33 @@ interface PlaygroundFrame {
 	url: string;
 	hasPlayground: boolean;
 	documentRoot?: string;
+}
+
+interface FrameAccess {
+	frameId: number;
+	parentFrameId: number;
+	url: string;
+	origin: string;
+	originPattern: string | null;
+	hostname: string;
+	isSupported: boolean;
+	isAllowlisted: boolean;
+	hasPermission: boolean;
+	canRequestPermission: boolean;
+}
+
+interface PermissionOption {
+	url: string;
+	origin: string;
+	originPattern: string;
+	frameIds: number[];
+}
+
+interface InjectionResult {
+	frameId: number;
+	url: string;
+	injected: boolean;
+	error?: string;
 }
 
 /**
@@ -111,6 +139,56 @@ function createPlaygroundFilesystem(
 	return filesystem;
 }
 
+function getPermissionOptions(frameAccess: FrameAccess[]): PermissionOption[] {
+	const options = new Map<string, PermissionOption>();
+
+	for (const frame of frameAccess) {
+		if (
+			!frame.canRequestPermission ||
+			frame.hasPermission ||
+			!frame.originPattern
+		) {
+			continue;
+		}
+
+		const option = options.get(frame.originPattern);
+		if (option) {
+			option.frameIds.push(frame.frameId);
+			continue;
+		}
+
+		options.set(frame.originPattern, {
+			url: frame.url,
+			origin: frame.origin || frame.hostname,
+			originPattern: frame.originPattern,
+			frameIds: [frame.frameId],
+		});
+	}
+
+	return Array.from(options.values()).sort((a, b) => {
+		const aHasMainFrame = a.frameIds.includes(0);
+		const bHasMainFrame = b.frameIds.includes(0);
+		if (aHasMainFrame !== bHasMainFrame) {
+			return aHasMainFrame ? -1 : 1;
+		}
+		return a.origin.localeCompare(b.origin);
+	});
+}
+
+function getFrameLabel(frameIds: number[]): string {
+	if (frameIds.includes(0)) {
+		if (frameIds.length === 1) {
+			return 'Main frame';
+		}
+
+		const subframeCount = frameIds.length - 1;
+		const suffix = subframeCount === 1 ? '' : 's';
+		return `Main frame and ${subframeCount} subframe${suffix}`;
+	}
+
+	return `${frameIds.length} subframe${frameIds.length === 1 ? '' : 's'}`;
+}
+
 function PlaygroundPanel() {
 	const [frames, setFrames] = useState<PlaygroundFrame[]>([]);
 	const [selectedFrame, setSelectedFrame] = useState<PlaygroundFrame | null>(
@@ -119,8 +197,39 @@ function PlaygroundPanel() {
 	const [filesystem, setFilesystem] =
 		useState<AsyncWritableFilesystem | null>(null);
 	const [isConnected, setIsConnected] = useState(false);
+	const [frameAccess, setFrameAccess] = useState<FrameAccess[]>([]);
+	const [requestingPermission, setRequestingPermission] = useState<
+		string | null
+	>(null);
+	const [permissionDenied, setPermissionDenied] = useState<string | null>(
+		null
+	);
+	const [injectionErrors, setInjectionErrors] = useState<InjectionResult[]>(
+		[]
+	);
 	const portRef = useRef<chrome.runtime.Port | null>(null);
 	const refreshIntervalRef = useRef<number | null>(null);
+
+	const handleRequestPermission = useCallback(async (url: string) => {
+		const originPattern = getOriginPattern(url) ?? url;
+
+		setRequestingPermission(originPattern);
+		setPermissionDenied(null);
+		try {
+			const granted = await requestPermissionForUrl(url);
+
+			if (granted && portRef.current) {
+				portRef.current.postMessage({
+					type: 'HOST_PERMISSION_GRANTED',
+					url,
+				});
+			} else if (!granted) {
+				setPermissionDenied(originPattern);
+			}
+		} finally {
+			setRequestingPermission(null);
+		}
+	}, []);
 
 	// Connect to the background script and set up frame detection
 	useEffect(() => {
@@ -136,11 +245,27 @@ function PlaygroundPanel() {
 		port.onMessage.addListener((message) => {
 			if (message.type === 'FRAMES_UPDATED') {
 				setFrames(message.frames);
+				setFrameAccess(message.frameAccess ?? []);
+
+				if (message.injectionResults) {
+					setInjectionErrors(
+						message.injectionResults.filter(
+							(result: InjectionResult) =>
+								!result.injected && result.error
+						)
+					);
+				}
 
 				// Auto-select if there's only one playground frame
-				if (message.frames.length === 1 && !selectedFrame) {
-					setSelectedFrame(message.frames[0]);
+				if (message.frames.length === 1) {
+					setSelectedFrame(
+						(currentFrame) => currentFrame ?? message.frames[0]
+					);
 				}
+			}
+
+			if (message.type === 'INJECTION_COMPLETE') {
+				port.postMessage({ type: 'REFRESH_FRAMES' });
 			}
 		});
 
@@ -188,6 +313,8 @@ function PlaygroundPanel() {
 		setSelectedFrame(frame ?? null);
 	};
 
+	const permissionOptions = getPermissionOptions(frameAccess);
+
 	// If not connected, show error
 	if (!isConnected) {
 		return (
@@ -198,6 +325,70 @@ function PlaygroundPanel() {
 						The connection to the page was lost. Please refresh the
 						DevTools panel.
 					</p>
+				</div>
+			</div>
+		);
+	}
+
+	if (frames.length === 0 && permissionOptions.length > 0) {
+		return (
+			<div className={styles.container}>
+				<div className={styles.message}>
+					<h2>Permission Required</h2>
+					<p>
+						Grant this extension access to the page or frame that
+						contains WordPress Playground.
+					</p>
+					<div className={styles.permissionList}>
+						{permissionOptions.map((option) => {
+							const isRequesting =
+								requestingPermission === option.originPattern;
+							return (
+								<div
+									className={styles.permissionItem}
+									key={option.originPattern}
+								>
+									<div>
+										<div
+											className={styles.permissionOrigin}
+										>
+											{option.origin}
+										</div>
+										<div
+											className={styles.permissionFrame}
+										>
+											{getFrameLabel(option.frameIds)}
+										</div>
+									</div>
+									<button
+										className={styles.permissionButton}
+										onClick={() =>
+											handleRequestPermission(option.url)
+										}
+										disabled={isRequesting}
+									>
+										{isRequesting
+											? 'Requesting...'
+											: 'Grant Permission'}
+									</button>
+								</div>
+							);
+						})}
+					</div>
+					{permissionDenied && (
+						<p className={styles.permissionError}>
+							Permission was not granted for {permissionDenied}.
+						</p>
+					)}
+					{injectionErrors.length > 0 && (
+						<div className={styles.permissionErrorList}>
+							{injectionErrors.map((result) => (
+								<p key={`${result.frameId}:${result.url}`}>
+									Frame {result.frameId}: {result.error}
+								</p>
+							))}
+						</div>
+					)}
 				</div>
 			</div>
 		);
@@ -220,6 +411,15 @@ function PlaygroundPanel() {
 					<p className={styles.hint}>
 						Scanning for playground instances...
 					</p>
+					{injectionErrors.length > 0 && (
+						<div className={styles.permissionErrorList}>
+							{injectionErrors.map((result) => (
+								<p key={`${result.frameId}:${result.url}`}>
+									Frame {result.frameId}: {result.error}
+								</p>
+							))}
+						</div>
+					)}
 				</div>
 			</div>
 		);

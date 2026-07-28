@@ -103,3 +103,70 @@
 		opacity: 1;
 	}
 }
+
+.permissionButton {
+	padding: 10px 20px;
+	font-size: 14px;
+	font-weight: 500;
+	color: #ffffff;
+	background-color: var(--wp-admin-theme-color, #3858e9);
+	border: none;
+	border-radius: 4px;
+	cursor: pointer;
+	transition: background-color 0.15s ease;
+}
+
+.permissionButton:hover:not(:disabled) {
+	background-color: var(--wp-admin-theme-color-darker-10, #2145e6);
+}
+
+.permissionButton:disabled {
+	opacity: 0.6;
+	cursor: not-allowed;
+}
+
+.permissionList {
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+	width: min(100%, 520px);
+	margin-top: 16px;
+}
+
+.permissionItem {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 16px;
+	padding: 12px;
+	text-align: left;
+	border: 1px solid var(--color-gray-200);
+	border-radius: 4px;
+	background: #ffffff;
+}
+
+.permissionOrigin {
+	font-size: 13px;
+	font-weight: 600;
+	color: var(--color-gray-900);
+	overflow-wrap: anywhere;
+}
+
+.permissionFrame {
+	margin-top: 4px;
+	font-size: 12px;
+	color: var(--color-gray-600);
+}
+
+.permissionError,
+.permissionErrorList {
+	width: min(100%, 520px);
+	margin-top: 16px;
+	font-size: 12px;
+	color: #cc1818;
+}
+
+.permissionErrorList p {
+	margin: 0 0 4px 0;
+	overflow-wrap: anywhere;
+}

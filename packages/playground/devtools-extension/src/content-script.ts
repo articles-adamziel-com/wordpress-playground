@@ -42,30 +42,40 @@ async function reportPlaygroundStatus() {
 	});
 }
 
-// Check immediately when the script loads
-reportPlaygroundStatus();
+const globalScope = globalThis as typeof globalThis & {
+	__wpPlaygroundDevToolsContentScriptLoaded?: boolean;
+};
 
-// Listen for requests from the DevTools panel to check again
-chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-	if (message.type === 'CHECK_PLAYGROUND') {
-		checkForPlayground().then((result) => {
-			sendResponse({
-				hasPlayground: result.hasPlayground,
-				documentRoot: result.documentRoot,
-				url: window.location.href,
+if (!globalScope.__wpPlaygroundDevToolsContentScriptLoaded) {
+	globalScope.__wpPlaygroundDevToolsContentScriptLoaded = true;
+
+	// Check immediately when the script loads
+	reportPlaygroundStatus();
+
+	// Listen for requests from the DevTools panel to check again
+	chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+		if (message.type === 'CHECK_PLAYGROUND') {
+			checkForPlayground().then((result) => {
+				sendResponse({
+					hasPlayground: result.hasPlayground,
+					documentRoot: result.documentRoot,
+					url: window.location.href,
+				});
 			});
-		});
-		return true; // Keep the message channel open for async response
-	}
+			return true; // Keep the message channel open for async response
+		}
 
-	if (message.type === 'EXECUTE_PLAYGROUND_METHOD') {
-		// Execute a method on window.playground and return the result
-		executePlaygroundMethod(message.method, message.args).then(
-			sendResponse
-		);
-		return true;
-	}
-});
+		if (message.type === 'EXECUTE_PLAYGROUND_METHOD') {
+			// Execute a method on window.playground and return the result
+			executePlaygroundMethod(message.method, message.args).then(
+				sendResponse
+			);
+			return true;
+		}
+
+		return false;
+	});
+}
 
 /**
  * Execute a method on window.playground by asking the background script
