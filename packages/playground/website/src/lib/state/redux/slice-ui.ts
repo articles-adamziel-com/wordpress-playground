@@ -152,6 +152,7 @@ export interface UIState {
 	offline: boolean;
 	siteManagerIsOpen: boolean;
 	siteManagerSection: SiteManagerSection;
+	wpCliConsoleIsOpen: boolean;
 }
 
 const query = new URL(document.location.href).searchParams;
@@ -194,6 +195,7 @@ const initialState: UIState = {
 		// your entire screen – quite a confusing experience.
 		window.innerWidth >= BREAKPOINTS.tablet,
 	siteManagerSection: 'site-details',
+	wpCliConsoleIsOpen: false,
 };
 
 const uiSlice = createSlice({
@@ -264,6 +266,9 @@ const uiSlice = createSlice({
 		) => {
 			state.siteManagerSection = action.payload;
 		},
+		setWpCliConsoleOpen: (state, action: PayloadAction<boolean>) => {
+			state.wpCliConsoleIsOpen = action.payload;
+		},
 		setSiteSlugToRename: (
 			state,
 			action: PayloadAction<string | undefined>
@@ -320,6 +325,7 @@ export const {
 	setOffline,
 	setSiteManagerOpen,
 	setSiteManagerSection,
+	setWpCliConsoleOpen,
 	setSiteSlugToRename,
 	setSiteSlugToDelete,
 } = uiSlice.actions;

@@ -1,0 +1,108 @@
+.wrapper {
+	position: fixed;
+	inset: 0 0 auto 0;
+	height: var(--wp-cli-panel-height, 360px);
+	z-index: 1000;
+	display: flex;
+	flex-direction: column;
+	background: #0b0f14;
+	border-bottom: 1px solid #263241;
+	box-shadow: 0 18px 32px rgb(0 0 0 / 28%);
+	transform: translateY(-100%);
+	transition: transform 160ms ease-out;
+	pointer-events: none;
+}
+
+.open {
+	transform: translateY(0);
+	pointer-events: auto;
+}
+
+.header {
+	display: flex;
+	flex: 0 0 auto;
+	align-items: flex-start;
+	justify-content: space-between;
+	gap: 16px;
+	padding: 14px 16px 10px;
+	border-bottom: 1px solid #1b2634;
+	color: #eef2f8;
+}
+
+.title {
+	margin: 0;
+	font-size: 14px;
+	font-weight: 600;
+	line-height: 1.2;
+}
+
+.description,
+.hint {
+	margin: 4px 0 0;
+	color: #aab6c5;
+	font-size: 12px;
+	line-height: 1.35;
+}
+
+.hint {
+	color: #7f8fa3;
+}
+
+.close-button {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 28px;
+	height: 28px;
+	padding: 0;
+	color: #d9e2ee;
+	background: transparent;
+	border: 1px solid #263241;
+	border-radius: 4px;
+	cursor: pointer;
+}
+
+.close-button:hover {
+	background: #16202c;
+	border-color: #3b4b5f;
+}
+
+.terminal {
+	flex: 1;
+	min-height: 0;
+	padding: 10px 12px 12px;
+}
+
+.terminal :global(.xterm) {
+	height: 100%;
+}
+
+.progress {
+	width: 100%;
+	height: 4px;
+	border: 0;
+}
+
+.resize-handle {
+	position: absolute;
+	right: 0;
+	bottom: -5px;
+	left: 0;
+	height: 10px;
+	padding: 0;
+	background: transparent;
+	border: 0;
+	cursor: ns-resize;
+}
+
+.resize-handle::before {
+	position: absolute;
+	top: 4px;
+	left: 50%;
+	width: 48px;
+	height: 2px;
+	background: #405064;
+	border-radius: 2px;
+	content: '';
+	transform: translateX(-50%);
+}

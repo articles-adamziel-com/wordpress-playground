@@ -3,8 +3,8 @@ import css from './style.module.css';
 import { SiteManager } from '../site-manager';
 import { CSSTransition } from 'react-transition-group';
 import type { PlaygroundReduxState } from '../../lib/state/redux/store';
-import { useAppSelector } from '../../lib/state/redux/store';
-import { useState, useRef, lazy, Suspense } from 'react';
+import { useAppDispatch, useAppSelector } from '../../lib/state/redux/store';
+import { useState, useEffect, useRef, lazy, Suspense } from 'react';
 import type { ExportFormValues } from '../../github/github-export-form/form';
 import { asPullRequestAction } from '../../github/github-export-form/form';
 import { GitHubOAuthGuardModal } from '../../github/github-oauth-guard';
@@ -20,10 +20,14 @@ import { MissingSiteModal } from '../missing-site-modal';
 import { RenameSiteModal } from '../rename-site-modal';
 import { DeleteSiteModal } from '../delete-site-modal';
 import { SaveSiteModal } from '../save-site-modal';
-import { modalSlugs } from '../../lib/state/redux/slice-ui';
+import {
+	modalSlugs,
+	setWpCliConsoleOpen,
+} from '../../lib/state/redux/slice-ui';
 import { GitHubPrivateRepoAuthModal } from '../github-private-repo-auth-modal';
 import { BlueprintUrlModal } from '../blueprint-url-modal';
 import { ModalLoadingFallback } from '../modal-loading-fallback';
+import WpCliConsole from '../wp-cli-console';
 
 /**
  * Lazy modal wrapper component to reduce Suspense repetition
@@ -60,14 +64,44 @@ function getDisplayModeFromQuery(): DisplayMode {
 }
 
 export function Layout() {
+	const dispatch = useAppDispatch();
 	const siteManagerIsOpen = useAppSelector(
 		(state) => state.ui.siteManagerIsOpen
 	);
+	const wpCliConsoleIsOpen = useAppSelector(
+		(state) => state.ui.wpCliConsoleIsOpen
+	);
 	const siteManagerWrapperRef = useRef<HTMLDivElement>(null);
+
+	useEffect(() => {
+		const onKeyDown = (event: KeyboardEvent) => {
+			if (
+				event.key !== '`' ||
+				event.altKey ||
+				event.ctrlKey ||
+				event.metaKey
+			) {
+				return;
+			}
+			const target = event.target as HTMLElement | null;
+			if (
+				target?.closest(
+					'input, textarea, select, [contenteditable="true"], .xterm'
+				)
+			) {
+				return;
+			}
+			event.preventDefault();
+			dispatch(setWpCliConsoleOpen(!wpCliConsoleIsOpen));
+		};
+		window.addEventListener('keydown', onKeyDown);
+		return () => window.removeEventListener('keydown', onKeyDown);
+	}, [dispatch, wpCliConsoleIsOpen]);
 
 	return (
 		<div className={`${css.layout}`}>
 			<Modals />
+			<WpCliConsole />
 			<CSSTransition
 				nodeRef={siteManagerWrapperRef}
 				in={siteManagerIsOpen}
