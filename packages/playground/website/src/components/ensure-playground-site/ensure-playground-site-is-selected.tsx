@@ -3,7 +3,7 @@ import { useCurrentUrl } from '../../lib/state/url/router-hooks';
 import { opfsSiteStorage } from '../../lib/state/opfs/opfs-site-storage';
 import {
 	OPFSSitesLoaded,
-	selectSiteBySlug,
+	selectSiteByUrlSlug,
 } from '../../lib/state/redux/slice-sites';
 import {
 	selectActiveSite,
@@ -38,12 +38,14 @@ export function EnsurePlaygroundSiteIsSelected({
 	const url = useCurrentUrl();
 	const requestedSiteSlug = url.searchParams.get('site-slug');
 	const requestedSiteObject = useAppSelector((state) =>
-		selectSiteBySlug(state, requestedSiteSlug!)
+		requestedSiteSlug
+			? selectSiteByUrlSlug(state, requestedSiteSlug)
+			: undefined
 	);
-	const requestedClientInfo = useAppSelector(
-		(state) =>
-			requestedSiteSlug &&
-			selectClientBySiteSlug(state, requestedSiteSlug)
+	const requestedClientInfo = useAppSelector((state) =>
+		requestedSiteObject
+			? selectClientBySiteSlug(state, requestedSiteObject.slug)
+			: undefined
 	);
 	const [needMissingSitePromptForSlug, setNeedMissingSitePromptForSlug] =
 		useState<false | string>(false);
@@ -89,7 +91,7 @@ export function EnsurePlaygroundSiteIsSelected({
 					return;
 				}
 
-				await sitesAPI.setActiveSite(requestedSiteSlug);
+				await sitesAPI.setActiveSite(requestedSiteObject.slug);
 				return;
 			}
 
